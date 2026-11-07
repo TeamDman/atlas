@@ -5,20 +5,20 @@ use std::fs;
 fn workspace(files: &[(&str, &str)]) -> Snapshot {
     let fixture = crate::test_support::Fixture::new(&[]);
     let root = fixture.path();
-    fs::create_dir_all(root.join("crates/murail-fix/src")).expect("fixture directories");
+    fs::create_dir_all(root.join("crates/demo-fix/src")).expect("fixture directories");
     fs::write(
         root.join("Cargo.toml"),
-        "[workspace]\nmembers=[\"crates/murail-fix\"]\nresolver=\"3\"\n",
+        "[workspace]\nmembers=[\"crates/demo-fix\"]\nresolver=\"3\"\n",
     )
     .expect("fixture workspace");
     fs::write(
-        root.join("crates/murail-fix/Cargo.toml"),
-        "[package]\nname=\"murail-fix\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
+        root.join("crates/demo-fix/Cargo.toml"),
+        "[package]\nname=\"demo-fix\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
     )
     .expect("fixture package");
-    fs::write(root.join("crates/murail-fix/src/lib.rs"), "").expect("fixture target");
+    fs::write(root.join("crates/demo-fix/src/lib.rs"), "").expect("fixture target");
     for (path, text) in files {
-        let path = root.join("crates/murail-fix/src").join(path);
+        let path = root.join("crates/demo-fix/src").join(path);
         fs::create_dir_all(path.parent().expect("parent")).expect("fixture source dir");
         fs::write(path, text).expect("fixture source");
     }
@@ -187,7 +187,7 @@ fn a_path_scope_matches_the_whole_crate_before_reporting() {
     // The item moved into the scoped folder and widened on the way.
     let before = workspace(&[("tick.rs", "fn advance() {}\n")]);
     let after = workspace(&[("engine/tick.rs", "pub(crate) fn advance() {}\n")]);
-    let scope = Scope::of(&before, &after, Some("crates/murail-fix/src/engine")).expect("scope");
+    let scope = Scope::of(&before, &after, Some("crates/demo-fix/src/engine")).expect("scope");
     let crates = scope.crates(&before, &after);
     let matched = |name: &str| crates.contains(name);
     let (old, new) = (
@@ -203,7 +203,7 @@ fn a_path_scope_matches_the_whole_crate_before_reporting() {
     let report = BodyReport::between(&old, &new, &scope);
     assert_eq!((report.exact, report.relocated), (1, 1));
     assert!(report.only_after.is_empty() && report.only_before.is_empty());
-    for refused in ["", "crates/murail-fix/src/nowhere", "murail-absent"] {
+    for refused in ["", "crates/demo-fix/src/nowhere", "demo-absent"] {
         assert!(
             Scope::of(&before, &after, Some(refused)).is_err(),
             "{refused:?}"
@@ -375,7 +375,7 @@ fn public_reports_retain_unreadable_and_ambiguous_evidence() {
         "invalid Rust has no structural inventory"
     );
     assert!(moved(&before, &after, None).is_err());
-    assert!(after.syntax_error("crates/murail-fix/src/a.rs").is_some());
+    assert!(after.syntax_error("crates/demo-fix/src/a.rs").is_some());
     // Ambiguity is still retained for valid, same-named sites.
     let before = workspace(&[("a.rs", "fn same() {}\n")]);
     let after = workspace(&[("a.rs", "pub fn same() {}\n"), ("b.rs", "fn same() {}\n")]);
@@ -389,11 +389,11 @@ fn public_reports_retain_unreadable_and_ambiguous_evidence() {
 fn removed_scopes_are_read_from_the_before_snapshot() {
     let before = workspace(&[("old/item.rs", "fn retired() {}\n")]);
     let after = workspace(&[]);
-    let report = moved(&before, &after, Some("./crates/murail-fix/src/old/")).expect("old scope");
+    let report = moved(&before, &after, Some("./crates/demo-fix/src/old/")).expect("old scope");
     assert_eq!(report.only_before.len(), 1);
     assert_eq!(report.only_before[0].name, "retired");
     assert_eq!(report.basis.before.sources.len(), 2);
-    assert!(visibility(&before, &after, Some("crates/murail-fix/src/old")).is_ok());
+    assert!(visibility(&before, &after, Some("crates/demo-fix/src/old")).is_ok());
 }
 #[test]
 fn an_inherent_impl_loop_is_not_a_trait_header() {
@@ -512,7 +512,7 @@ fn excluded_source_diagnostics_survive_the_comparison_basis() {
     fs::create_dir_all(root.join("src")).expect("fixture");
     fs::write(
         root.join("Cargo.toml"),
-        "[package]\nname=\"murail-fix\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
+        "[package]\nname=\"demo-fix\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
     )
     .expect("manifest");
     fs::write(root.join("src/lib.rs"), "fn f() {}\n").expect("source");

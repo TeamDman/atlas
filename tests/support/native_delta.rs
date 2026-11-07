@@ -1,4 +1,4 @@
-//! Frozen Murail gate consumer at 32e218d: same decision body and original assertion.
+//! A frozen external landing-gate consumer: its decision body and original assertion.
 //! Visibility is widened for this test oracle; project publication/bead resolution is not simulated.
 #![expect(
     dead_code,

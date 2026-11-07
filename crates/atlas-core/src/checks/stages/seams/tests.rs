@@ -99,12 +99,12 @@ fn order() -> StageOrder {
 /// reads middle's boundary and owes a row for front.
 const POLICY: &str = r#"
     front = {}
-    middle = { input = ["front"], debt = { front = { items = 1, owner = "murail-zhe09.29" } } }
-    back = { input = ["middle"], debt = { front = { items = 2, owner = "murail-zhe09.29" } } }
+    middle = { input = ["front"], debt = { front = { items = 1, owner = "issue-29" } } }
+    back = { input = ["middle"], debt = { front = { items = 2, owner = "issue-29" } } }
 "#;
 const SEAMS: &str = r#"
     floor = ["vocabulary"]
-    test_coupling = { back = { pairs = 1, owner = "murail-zhe09.29" } }
+    test_coupling = { back = { pairs = 1, owner = "issue-29" } }
 "#;
 
 const FRONT_HEADER: &str = "//! Front.\n//!\n//! Boundary (`fm/core.md` §Definition: core terms): `Presentation`,\n//! `Certified`.\n";
@@ -229,8 +229,8 @@ fn a_name_read_from_another_stage_cannot_use_a_rows_slack() {
         "pub(crate) fn scratch() {}\n".to_owned(),
     ));
     let policy = POLICY.replace(
-        r#"back = { input = ["middle"], debt = { front = { items = 2, owner = "murail-zhe09.29" } } }"#,
-        r#"back = { input = ["middle"], debt = { front = { items = 2, owner = "murail-zhe09.29" }, middle = { items = 1, owner = "murail-zhe09.29" } } }"#,
+        r#"back = { input = ["middle"], debt = { front = { items = 2, owner = "issue-29" } } }"#,
+        r#"back = { input = ["middle"], debt = { front = { items = 2, owner = "issue-29" }, middle = { items = 1, owner = "issue-29" } } }"#,
     );
     files[BACK_ROOT].1 = format!("{BACK}use crate::middle::scratch_home::scratch;\n");
     let base = read(&files, &policy, SEAMS).0;
@@ -387,8 +387,7 @@ fn a_new_unlisted_export_is_refused_and_a_raised_row_cannot_bless_it() {
     assert_eq!(found.len(), 2, "{found:#?}");
     assert!(found[0].contains("front's root exports 1 items"));
     assert!(found[1].contains("root newly exports `extra`"));
-    let raised =
-        format!("{SEAMS}\n[exports]\nfront = {{ items = 1, owner = \"murail-zhe09.29\" }}\n");
+    let raised = format!("{SEAMS}\n[exports]\nfront = {{ items = 1, owner = \"issue-29\" }}\n");
     let found = refusals(&with(FRONT, &front), POLICY, &raised);
     assert_eq!(found.len(), 1, "{found:#?}");
     assert!(found[0].contains("root newly exports `extra`"));
@@ -408,7 +407,7 @@ reason = "read access until the view exists"
 methods = ["intern"]
 functions = ["remap"]
 producers = ["front", "middle"]
-owner = "murail-zhe09.34"
+owner = "issue-34"
 "#;
 
 #[test]
@@ -615,7 +614,7 @@ fn a_floor_type_takes_a_writers_row_without_a_listing() {
             .to_owned();
     files[BACK_ROOT].1 =
         format!("{BACK}fn f(g: &mut crate::vocabulary::Graph) {{ g.rewrite(); }}\n");
-    let row = "\n[writers.Graph]\nstage = \"vocabulary\"\nreason = \"one object every later stage reads\"\nproducers = [\"middle\"]\nowner = \"murail-zhe09.30\"\n";
+    let row = "\n[writers.Graph]\nstage = \"vocabulary\"\nreason = \"one object every later stage reads\"\nproducers = [\"middle\"]\nowner = \"issue-30\"\n";
     let seams = format!("{SEAMS}{row}");
     let (now, report) = read(&files, POLICY, &seams);
     let found = now.refusals(None, &report, &published(POLICY, &seams));

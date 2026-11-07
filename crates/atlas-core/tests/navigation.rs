@@ -15,18 +15,18 @@ const LIB: &str =
     "//! Fixture crate root.\n\npub mod admit;\npub mod grade;\n\npub use crate::admit::Tile;\n";
 fn fixture(extra: &str) -> (Fixture, atlas_core::discovery::Snapshot) {
     let root = Fixture::new(&[]);
-    let dir = root.path().join("crates/murail-fix/src");
+    let dir = root.path().join("crates/demo-fix/src");
     fs::create_dir_all(&dir).expect("navigation fixture prerequisite must succeed");
     fs::write(
         root.path().join("Cargo.toml"),
-        "[workspace]\nmembers=['crates/murail-fix']\nresolver='3'\n",
+        "[workspace]\nmembers=['crates/demo-fix']\nresolver='3'\n",
     )
     .expect("navigation fixture prerequisite must succeed");
     fs::write(
         dir.parent()
             .expect("navigation fixture prerequisite must succeed")
             .join("Cargo.toml"),
-        "[package]\nname='murail-fix'\nversion='0.0.0'\nedition='2024'\n",
+        "[package]\nname='demo-fix'\nversion='0.0.0'\nedition='2024'\n",
     )
     .expect("navigation fixture prerequisite must succeed");
     for (name, text) in [("lib.rs", LIB), ("admit.rs", ADMIT), ("grade.rs", GRADE)] {
@@ -52,7 +52,7 @@ fn census_workspace_rung_is_the_per_crate_golden() {
         panic!("rows")
     };
     assert_eq!(report.rows.len(), 1);
-    assert_eq!(report.rows[0].key, "murail-fix");
+    assert_eq!(report.rows[0].key, "demo-fix");
     assert_eq!(
         report.total,
         Tally {
@@ -77,7 +77,7 @@ fn census_crate_rung_lists_modules_and_pub_only_narrows() {
         let nav = Navigation::new(&snapshot, visibility)
             .expect("navigation fixture prerequisite must succeed");
         let Census::Rows(report) = nav
-            .census(Some("murail-fix"))
+            .census(Some("demo-fix"))
             .expect("navigation fixture prerequisite must succeed")
         else {
             panic!("rows")
@@ -123,7 +123,7 @@ fn name_card_shows_binding_facade_edges_and_doc_gap() {
     let cost = nav
         .name("grade::Cost")
         .expect("navigation fixture prerequisite must succeed");
-    assert_eq!(cost.matches[0].file, "crates/murail-fix/src/grade.rs");
+    assert_eq!(cost.matches[0].file, "crates/demo-fix/src/grade.rs");
     assert!(
         cost.edges
             .iter()
@@ -143,7 +143,7 @@ fn module_card_shows_header_items_orphans_and_graph() {
     let nav = Navigation::new(&snapshot, VisibilitySelection::RestrictedOrPublic)
         .expect("navigation fixture prerequisite must succeed");
     let module = nav
-        .module("crates/murail-fix/src/admit.rs")
+        .module("crates/demo-fix/src/admit.rs")
         .expect("navigation fixture prerequisite must succeed");
     let context = &module.contexts[0];
     assert_eq!(context.tally.nontest_loc, 21);
@@ -154,7 +154,7 @@ fn module_card_shows_header_items_orphans_and_graph() {
             .fan_in_files
             .as_ref()
             .expect("navigation fixture prerequisite must succeed"),
-        &["crates/murail-fix/src/lib.rs"]
+        &["crates/demo-fix/src/lib.rs"]
     );
     assert_eq!(context.unmentioned_names, ["Refusal"]);
     assert_eq!(context.edges.len(), 3);
@@ -164,7 +164,7 @@ fn module_card_shows_header_items_orphans_and_graph() {
         "Admission for fixture tiles — realization kernel §5."
     );
     let Census::Module(_) = nav
-        .census(Some("crates/murail-fix/src/admit.rs"))
+        .census(Some("crates/demo-fix/src/admit.rs"))
         .expect("navigation fixture prerequisite must succeed")
     else {
         panic!("module rung")
@@ -207,7 +207,7 @@ fn navigation_never_reopens_captured_source() {
         1
     );
     assert!(
-        nav.module("crates/murail-fix/src/grade.rs")
+        nav.module("crates/demo-fix/src/grade.rs")
             .expect("navigation fixture prerequisite must succeed")
             .contexts[0]
             .header
@@ -222,7 +222,7 @@ fn external_import_shadowing_remains_explicitly_unresolved() {
     for import in ["use ext::Cost;", "use ext::*;"] {
         let (root, _) = fixture("");
         fs::write(
-            root.path().join("crates/murail-fix/src/foreign.rs"),
+            root.path().join("crates/demo-fix/src/foreign.rs"),
             format!("{import}\npub fn foreign() -> Cost {{ loop {{}} }}\n"),
         )
         .expect("source");
@@ -343,12 +343,9 @@ fn navigation_diagnostics_follow_the_question_and_preserve_required_unknowns() {
 #[test]
 fn source_exclusions_remain_visible_in_every_native_query() {
     let (root, _) = fixture("");
-    let source = root.path().join("crates/murail-fix/src/grade.rs");
-    std::os::unix::fs::symlink(
-        &source,
-        root.path().join("crates/murail-fix/src/excluded.rs"),
-    )
-    .expect("excluded source");
+    let source = root.path().join("crates/demo-fix/src/grade.rs");
+    std::os::unix::fs::symlink(&source, root.path().join("crates/demo-fix/src/excluded.rs"))
+        .expect("excluded source");
     let snapshot = snapshot_workspace(root.path()).expect("snapshot");
     let nav = Navigation::new(&snapshot, VisibilitySelection::Public).expect("navigation");
     let Census::Rows(census) = nav.census(None).expect("census") else {
@@ -370,7 +367,7 @@ fn source_exclusions_remain_visible_in_every_native_query() {
             .any(|d| d.file.ends_with("excluded.rs"))
     );
     assert!(
-        nav.module("crates/murail-fix/src/grade.rs")
+        nav.module("crates/demo-fix/src/grade.rs")
             .expect("module")
             .basis
             .diagnostics
@@ -382,7 +379,7 @@ fn source_exclusions_remain_visible_in_every_native_query() {
 #[test]
 fn a_multiline_attribute_between_cfg_and_module_cannot_add_test_lines_to_census() {
     let (root, _) = fixture("");
-    let src = root.path().join("crates/murail-fix/src");
+    let src = root.path().join("crates/demo-fix/src");
     fs::write(src.join("lib.rs"), format!("{LIB}pub mod jit;\n")).expect("root");
     fs::write(
         src.join("jit.rs"),
@@ -393,10 +390,7 @@ fn a_multiline_attribute_between_cfg_and_module_cannot_add_test_lines_to_census(
     fs::write(src.join("jit/tests.rs"), "pub fn test_only() {}\n").expect("test source");
     let snapshot = snapshot_workspace(root.path()).expect("snapshot");
     let nav = Navigation::new(&snapshot, VisibilitySelection::Public).expect("navigation");
-    let Census::Rows(report) = nav
-        .census(Some("crates/murail-fix/src/jit"))
-        .expect("census")
-    else {
+    let Census::Rows(report) = nav.census(Some("crates/demo-fix/src/jit")).expect("census") else {
         panic!("rows")
     };
     assert_eq!(report.total.nontest_loc, 0);
@@ -417,9 +411,9 @@ fn dump_serializes_the_existing_item_and_edge_authorities() {
         .find(|d| d.site.name == "Refusal")
         .expect("Refusal");
     assert_eq!(refusal.site.kind, ItemKind::Enum);
-    assert_eq!(refusal.home, "murail-fix::admit");
+    assert_eq!(refusal.home, "demo-fix::admit");
     assert_eq!(refusal.site.visibility, Visibility::PubCrate);
-    assert_eq!(refusal.id, "crates/murail-fix/src/admit.rs:12:Refusal");
+    assert_eq!(refusal.id, "crates/demo-fix/src/admit.rs:12:Refusal");
     assert!(
         dump.declarations
             .iter()
@@ -451,7 +445,7 @@ fn public_root_reexports_are_the_only_facade_edges() {
     use atlas_core::queries::navigation::ExportKind;
     let (root, _) = fixture("");
     fs::write(
-        root.path().join("crates/murail-fix/src/lib.rs"),
+        root.path().join("crates/demo-fix/src/lib.rs"),
         format!("{LIB}pub(crate) use crate::grade::Cost as InternalCost;\n"),
     )
     .expect("root");
@@ -480,7 +474,7 @@ fn public_root_reexports_are_the_only_facade_edges() {
 fn grouped_exports_keep_bound_names_paths_and_typed_missing_targets() {
     use atlas_core::{model::Resolution, queries::navigation::BindingEvidence};
     let (root, _) = fixture("");
-    fs::write(root.path().join("crates/murail-fix/src/lib.rs"), format!("{LIB}pub use crate::{{admit::Tile as PublicTile, grade::{{Cost as Fee, Missing as Unknown}}}};\n")).expect("exports");
+    fs::write(root.path().join("crates/demo-fix/src/lib.rs"), format!("{LIB}pub use crate::{{admit::Tile as PublicTile, grade::{{Cost as Fee, Missing as Unknown}}}};\n")).expect("exports");
     let snapshot = snapshot_workspace(root.path()).expect("snapshot");
     let dump = Navigation::new(&snapshot, VisibilitySelection::Public)
         .expect("navigation")
@@ -511,7 +505,7 @@ fn grouped_exports_keep_bound_names_paths_and_typed_missing_targets() {
 fn export_candidates_preserve_qualified_and_name_preference_evidence() {
     use atlas_core::{model::Resolution, queries::navigation::BindingEvidence};
     let (root, _) = fixture("");
-    let src = root.path().join("crates/murail-fix/src");
+    let src = root.path().join("crates/demo-fix/src");
     fs::write(src.join("a.rs"), "pub struct Repeated;\n").expect("a");
     fs::write(src.join("b.rs"), "pub struct Repeated;\n").expect("b");
     fs::write(src.join("lib.rs"), format!("{LIB}pub use crate::a::Repeated as Precise;\npub use Repeated as Ambiguous;\npub use nowhere::Cost as LocalFallback;\n")).expect("root");

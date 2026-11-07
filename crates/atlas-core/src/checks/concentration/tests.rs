@@ -76,8 +76,8 @@ fn landing(
 ) -> TestVerdict {
     // Explicit interpretations of the two citation-bearing native fixture inputs.
     let beads = match description {
-        "(murail-x)" => BTreeSet::from(["murail-x".into()]),
-        "concentration: loosen (murail-ruling)" => BTreeSet::from(["murail-ruling".into()]),
+        "(demo-x)" => BTreeSet::from(["demo-x".into()]),
+        "concentration: loosen (demo-ruling)" => BTreeSet::from(["demo-ruling".into()]),
         "" | "no citation" => BTreeSet::new(),
         other => panic!("uninterpreted fixture description: {other}"),
     };
@@ -433,14 +433,14 @@ fn a_new_collision_row_and_a_reruled_collision_gaining_a_home_refuse() {
             .any(|row| row.contains("without naming who re-ruled it"))
     );
     let reruled = policy(&format!(
-        "name = [{{ name = 'plan', ruling = 'facet', why = 'one plan', reruled_by = 'murail-x', {homes} }}]"
+        "name = [{{ name = 'plan', ruling = 'facet', why = 'one plan', reruled_by = 'demo-x', {homes} }}]"
     ));
     assert!(
         refusals(&reruled, Some(&same_homes), &tree)
             .iter()
             .any(|row| row.contains("does not cite"))
     );
-    let verdict = landing(&reruled, Some(&same_homes), &tree, &tree, "(murail-x)");
+    let verdict = landing(&reruled, Some(&same_homes), &tree, &tree, "(demo-x)");
     assert!(verdict.violations.is_empty(), "{:?}", verdict.violations);
     // The unruled-name fix offers a facet ruling, never a collision row.
     let unruled = refusals(&empty, None, &tree);
@@ -510,7 +510,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
             "['conventional_names']",
         ),
     ];
-    let cited = "concentration: loosen (murail-ruling)";
+    let cited = "concentration: loosen (demo-ruling)";
     for (knobs, expected, covers) in cases {
         let refused = refusals(&section(knobs, ""), Some(&published), &tree);
         assert_eq!(refused.len(), expected.len(), "{refused:?}");
@@ -519,7 +519,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
         }
         let ruled = section(
             knobs,
-            &format!("amended_by = {{ bead = 'murail-ruling', covers = {covers} }}"),
+            &format!("amended_by = {{ bead = 'demo-ruling', covers = {covers} }}"),
         );
         let verdict = landing(&ruled, Some(&published), &tree, &tree, cited);
         assert!(verdict.violations.is_empty(), "{:?}", verdict.violations);
@@ -536,7 +536,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
         };
         let uncovered = section(
             knobs,
-            &format!("amended_by = {{ bead = 'murail-ruling', covers = {other} }}"),
+            &format!("amended_by = {{ bead = 'demo-ruling', covers = {other} }}"),
         );
         assert_eq!(
             landing(&uncovered, Some(&published), &tree, &tree, cited)
@@ -547,7 +547,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
         // A ruling already published rules nothing new.
         let stale = section(
             BASE_KNOBS,
-            &format!("amended_by = {{ bead = 'murail-ruling', covers = {covers} }}"),
+            &format!("amended_by = {{ bead = 'demo-ruling', covers = {covers} }}"),
         );
         assert_eq!(
             landing(&ruled, Some(&stale), &tree, &tree, cited)
@@ -559,7 +559,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
     // A ruling may cover only what this landing loosens.
     let loosened = section(
         "population = ['fix', 'gone']\nentry_lines = 4\nfile_lines = 5\nconventional_names = ['error']",
-        "amended_by = { bead = 'murail-ruling', covers = ['entry_lines', 'population'] }",
+        "amended_by = { bead = 'demo-ruling', covers = ['entry_lines', 'population'] }",
     );
     let extra = landing(&loosened, Some(&published), &tree, &tree, cited).violations;
     assert_eq!(extra.len(), 1, "{extra:?}");

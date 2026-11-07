@@ -366,7 +366,7 @@ pub use crate::grade::Cost;
 
     #[test]
     fn test_regions_cover_every_gated_module_not_only_the_last() {
-        // The murail-8tlip class: production code between two test modules.
+        // Production code between two test modules.
         // A single terminal boundary counted the interleaved module — and
         // everything after it — as production.
         let source = "\

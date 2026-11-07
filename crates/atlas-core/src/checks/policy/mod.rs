@@ -309,8 +309,8 @@ pub enum Ruling {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Alias {
-    /// The module that holds the re-export (`murail-compiler`, its root, or
-    /// `murail-session::workflow::status`).
+    /// The module that holds the re-export (`demo-compiler`, its root, or
+    /// `demo-session::workflow::status`).
     pub module: String,
     pub kind: AliasKind,
     /// The name the re-export binds.

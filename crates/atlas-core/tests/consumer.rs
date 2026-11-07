@@ -61,10 +61,7 @@ fn main() -> atlas_core::Result<()> {
         .lines()
     {
         assert!(
-            !matches!(
-                line.split_whitespace().next(),
-                Some("clap" | "atlas" | "murail-atlas")
-            ),
+            !matches!(line.split_whitespace().next(), Some("clap" | "atlas")),
             "unexpected application dependency: {line}"
         );
     }

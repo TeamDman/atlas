@@ -11,7 +11,7 @@ pub struct ItemSpan {
     pub first: usize,
     pub last: usize,
 }
-/// Murail's native block-depth unit: declaration through next top-level declaration
+/// The native block-depth unit: declaration through next top-level declaration
 /// or test region, rather than the attached syntactic closing brace.
 #[derive(Debug, Serialize)]
 pub struct Block {

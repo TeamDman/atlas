@@ -5,13 +5,13 @@ use super::*;
 
 fn crate_map(files: &[(&str, &str)]) -> CrateMap {
     CrateMap {
-        name: "murail-fix".to_owned(),
-        src_rel: "crates/murail-fix/src".to_owned(),
+        name: "demo-fix".to_owned(),
+        src_rel: "crates/demo-fix/src".to_owned(),
         mounted: Vec::new(),
         files: files
             .iter()
             .map(|(rel, text)| {
-                FileMap::of(format!("crates/murail-fix/src/{rel}"), (*text).to_owned())
+                FileMap::of(format!("crates/demo-fix/src/{rel}"), (*text).to_owned())
             })
             .collect(),
     }
@@ -30,8 +30,7 @@ fn row(reads: &[&str], debt: &[&str]) -> policy::StageReads {
             debt.iter()
                 .map(|stage| {
                     let row: policy::DebtRow =
-                        toml::from_str("items = 1\nowner = 'murail-zhe09.29'")
-                            .expect("fixture row");
+                        toml::from_str("items = 1\nowner = 'issue-29'").expect("fixture row");
                     ((*stage).to_owned(), row)
                 })
                 .collect(),
@@ -130,41 +129,41 @@ fn a_stage_interface_refuses_only_an_undeclared_read() {
         report.unused_reads(),
         [("load".to_owned(), "schedule".to_owned())]
     );
-    assert_eq!(report.refusals("murail-fix").len(), 1);
+    assert_eq!(report.refusals("demo-fix").len(), 1);
     // A crate that declares no interfaces is not judged.
     report.interfaces = None;
     assert!(report.undeclared_reads().is_empty());
-    assert!(report.refusals("murail-fix").is_empty());
+    assert!(report.refusals("demo-fix").is_empty());
 }
 
 #[test]
 fn a_stage_interface_row_the_orders_cannot_read_is_refused() {
     let orders = vec![StageOrder {
-        crate_name: "murail-fix".to_owned(),
+        crate_name: "demo-fix".to_owned(),
         stages: order(),
     }];
     let good = BTreeMap::from([(
-        "murail-fix".to_owned(),
+        "demo-fix".to_owned(),
         BTreeMap::from([("engine".to_owned(), row(&["schedule"], &["load"]))]),
     )]);
     let unseamed = BTreeMap::new();
     assert!(interface_policy_violations(&orders, &good, &unseamed, None).is_empty());
     for bad in [
-        BTreeMap::from([("murail-fx".to_owned(), BTreeMap::new())]),
+        BTreeMap::from([("demo-fx".to_owned(), BTreeMap::new())]),
         BTreeMap::from([(
-            "murail-fix".to_owned(),
+            "demo-fix".to_owned(),
             BTreeMap::from([("engin".to_owned(), row(&[], &[]))]),
         )]),
         BTreeMap::from([(
-            "murail-fix".to_owned(),
+            "demo-fix".to_owned(),
             BTreeMap::from([("engine".to_owned(), row(&["shedule"], &[]))]),
         )]),
         BTreeMap::from([(
-            "murail-fix".to_owned(),
+            "demo-fix".to_owned(),
             BTreeMap::from([("load".to_owned(), row(&["engine"], &[]))]),
         )]),
         BTreeMap::from([(
-            "murail-fix".to_owned(),
+            "demo-fix".to_owned(),
             BTreeMap::from([("engine".to_owned(), row(&["load"], &["load"]))]),
         )]),
     ] {
@@ -179,29 +178,29 @@ fn a_stage_interface_row_the_orders_cannot_read_is_refused() {
 #[test]
 fn a_seamed_row_reads_only_the_floor_whole_and_names_its_debt_in_rows() {
     let orders = vec![StageOrder {
-        crate_name: "murail-fix".to_owned(),
+        crate_name: "demo-fix".to_owned(),
         stages: order(),
     }];
     let seams: BTreeMap<String, policy::StageSeams> = BTreeMap::from([(
-        "murail-fix".to_owned(),
+        "demo-fix".to_owned(),
         toml::from_str("floor = ['load']").expect("fixture seams"),
     )]);
     let rows = |text: &str| {
         BTreeMap::from([(
-            "murail-fix".to_owned(),
+            "demo-fix".to_owned(),
             toml::from_str::<BTreeMap<String, policy::StageReads>>(text).expect("fixture rows"),
         )])
     };
     // An input may owe a row for its interior.
     let good = rows(
-        "engine = { input = ['schedule'], debt = { schedule = { items = 2, owner = 'murail-zhe09.29' } } }",
+        "engine = { input = ['schedule'], debt = { schedule = { items = 2, owner = 'issue-29' } } }",
     );
     assert!(interface_policy_violations(&orders, &good, &seams, None).is_empty());
     for bad in [
         "engine = { reads = ['schedule'] }",
         "engine = { input = ['load'] }",
         "engine = { debt = ['schedule'] }",
-        "engine = { input = ['schedule'], reads = [] , debt = { shedule = { items = 1, owner = 'murail-zhe09.29' } } }",
+        "engine = { input = ['schedule'], reads = [] , debt = { shedule = { items = 1, owner = 'issue-29' } } }",
     ] {
         assert_eq!(
             interface_policy_violations(&orders, &rows(bad), &seams, None).len(),
@@ -211,7 +210,7 @@ fn a_seamed_row_reads_only_the_floor_whole_and_names_its_debt_in_rows() {
     }
     // A floor stage reads only the floor.
     let schedule_floor: BTreeMap<String, policy::StageSeams> = BTreeMap::from([(
-        "murail-fix".to_owned(),
+        "demo-fix".to_owned(),
         toml::from_str("floor = ['schedule']").expect("fixture seams"),
     )]);
     let floor_reads = interface_policy_violations(
@@ -223,7 +222,7 @@ fn a_seamed_row_reads_only_the_floor_whole_and_names_its_debt_in_rows() {
     assert_eq!(floor_reads.len(), 1, "{floor_reads:#?}");
     assert!(floor_reads[0].contains("a floor stage reads only the floor"));
     let unknown_floor = BTreeMap::from([(
-        "murail-fix".to_owned(),
+        "demo-fix".to_owned(),
         toml::from_str::<policy::StageSeams>("floor = ['lod']").expect("fixture seams"),
     )]);
     assert_eq!(
@@ -264,7 +263,7 @@ fn a_forward_import_is_reported_with_its_site() {
     // Test-only imports stay outside the production reading.
     assert_eq!(
         sites,
-        vec![("crates/murail-fix/src/load/cursor.rs", 2, "load", "engine")]
+        vec![("crates/demo-fix/src/load/cursor.rs", 2, "load", "engine")]
     );
     assert_eq!(report.absent, vec!["schedule".to_owned()]);
 }
@@ -303,9 +302,9 @@ fn a_root_glob_is_reported_not_skipped() {
     assert_eq!(
         sites,
         vec![
-            ("crates/murail-fix/src/load.rs", 1, Unjudged::RootGlob),
+            ("crates/demo-fix/src/load.rs", 1, Unjudged::RootGlob),
             (
-                "crates/murail-fix/src/schedule/plan.rs",
+                "crates/demo-fix/src/schedule/plan.rs",
                 1,
                 Unjudged::RootGlob
             ),
@@ -339,7 +338,7 @@ fn a_forward_edge_through_an_unplaced_module_is_reported() {
     assert_eq!(hops, vec![("load", "witness".to_owned(), "engine")]);
 }
 
-// murail-7soto.4: unplaced → unplaced → later is followed to its end.
+// unplaced → unplaced → later is followed to its end.
 #[test]
 fn a_forward_edge_through_an_unplaced_chain_is_reported() {
     let report = StageReport::of(
@@ -368,7 +367,7 @@ fn a_forward_edge_through_an_unplaced_chain_is_reported() {
     );
 }
 
-// murail-7soto.4: `pub(crate) use alias::X as Y;` where `alias` is itself
+// `pub(crate) use alias::X as Y;` where `alias` is itself
 // a root re-export of a module is followed to the module's stage.
 #[test]
 fn a_multi_step_root_alias_cannot_hide_a_forward_edge() {
@@ -387,7 +386,7 @@ fn a_multi_step_root_alias_cannot_hide_a_forward_edge() {
     assert!(report.unjudged.is_empty());
 }
 
-// murail-7soto.2: an alias of the crate root carries its paths with it.
+// an alias of the crate root carries its paths with it.
 #[test]
 fn a_crate_alias_cannot_hide_a_forward_edge() {
     let report = StageReport::of(
@@ -423,7 +422,7 @@ fn a_crate_alias_cannot_hide_a_forward_edge() {
     );
 }
 
-// murail-7soto.2: a root name a lib.rs glob may supply is unjudged.
+// a root name a lib.rs glob may supply is unjudged.
 #[test]
 fn a_name_under_a_root_glob_re_export_is_unjudged() {
     let files = [
@@ -457,7 +456,7 @@ fn a_name_under_a_root_glob_re_export_is_unjudged() {
     );
 }
 
-// murail-7soto.5: a root re-export that reuses a module's name reads as
+// a root re-export that reuses a module's name reads as
 // the re-export when the path ends (a call), the module when it continues.
 #[test]
 fn a_re_export_named_like_a_module_resolves_by_namespace() {
@@ -569,7 +568,7 @@ fn a_shared_name_refusal_names_the_braced_self_remedy() {
         ]),
         &order(),
     );
-    let refusals = report.refusals("murail-fix");
+    let refusals = report.refusals("demo-fix");
     assert_eq!(refusals.len(), 1);
     assert!(refusals[0].contains("amend the stage_order row if the order is wrong"));
     assert!(refusals[0].contains("write `use crate::load::{self};`"));
@@ -696,7 +695,7 @@ fn each_unjudged_refusal_names_its_own_remedy() {
         ]),
         &order(),
     );
-    let refusals = report.refusals("murail-fix");
+    let refusals = report.refusals("demo-fix");
     assert_eq!(refusals.len(), 2);
     assert!(refusals[0].contains("replace the lib.rs glob with named re-exports"));
     assert!(refusals[1].contains("import each name by its true path"));

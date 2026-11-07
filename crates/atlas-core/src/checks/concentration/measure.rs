@@ -18,7 +18,7 @@ pub struct Measure {
     /// Every production file, with its body lines.
     pub file: BTreeMap<String, usize>,
     /// Each non-conventional module name with more than one home, each home
-    /// a module id (`murail-compiler::select::selection`), so a file layout
+    /// a module id (`demo-compiler::select::selection`), so a file layout
     /// change (`plan.rs` to `plan/mod.rs`) moves no home.
     pub homes: BTreeMap<String, BTreeSet<String>>,
     pub aliases: BTreeSet<Alias>,
