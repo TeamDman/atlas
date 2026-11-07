@@ -15,9 +15,8 @@ MANIFEST
 cat > "$atlas_scratch/project/src/lib.rs" <<'SOURCE'
 pub mod transformer;
 pub use transformer::{Input, Output, transform};
-enum Layer { Stage }
-const MODULES: [(&str, Option<()>, Layer, &[&str]);1] = [("transformer",None,Layer::Stage,&[])];
-const SURFACES: [(&str,&str,&[&str]);1] = [("transformer","transform",&["Input","Output"])];
+enum Role { Pass }
+const PIPELINE: [(&str, &str, Role, &str); 1] = [("transformer", "transform", Role::Pass, "Transformer")];
 SOURCE
 cat > "$atlas_scratch/project/src/transformer.rs" <<'SOURCE'
 pub struct Input;
@@ -30,7 +29,10 @@ SOURCE
 cat > "$atlas_scratch/project/profile.json" <<'PROFILE'
 {"schema":1,"source":[],"modules":[{"name":"transformer","kind":"stage","path":"src/lib.rs","entry":"transform","types":["Input","Output"],"dependencies":[]}],"workflows":[]}
 PROFILE
-test -x "$atlas_scratch/install/bin/atlas-girard"
+# Declaration adapters are separate executables; build the public example.
+cargo build --locked --quiet --manifest-path "$atlas_source/Cargo.toml" --example pipeline-adapter --target-dir "$atlas_scratch/adapter-target"
+atlas_adapter="$atlas_scratch/adapter-target/debug/examples/pipeline-adapter"
+test -x "$atlas_adapter"
 cd "$atlas_scratch/work"
 "$atlas_scratch/install/bin/atlas" --version
 "$atlas_scratch/install/bin/atlas" census "$atlas_scratch/project" --json > census.json
@@ -59,7 +61,7 @@ QUERY
 "$atlas_scratch/install/bin/atlas" representations "$atlas_scratch/project" --query representations.json --backend pele --out "$atlas_scratch/work/representations.svg"
 node --input-type=module -e 'import fs from "node:fs"; for (const path of ["representations.txt", "representations.svg"]) if (!fs.readFileSync(path, "utf8").includes("transform")) process.exit(1);'
 
-"$atlas_scratch/install/bin/atlas" overview "$atlas_scratch/project" --backend pele --out "$atlas_scratch/work/overview.svg"
+"$atlas_scratch/install/bin/atlas" overview "$atlas_scratch/project" --adapter "$atlas_adapter" --backend pele --out "$atlas_scratch/work/overview.svg"
 "$atlas_scratch/install/bin/atlas" dependencies "$atlas_scratch/project" src --relation all --backend pele --out "$atlas_scratch/work/dependencies.svg"
 "$atlas_scratch/install/bin/atlas" representations "$atlas_scratch/project" --type Output --panel producers > producers.txt
 git -C "$atlas_scratch/project" init -q
@@ -72,8 +74,8 @@ node --input-type=module -e 'import fs from "node:fs"; for (const path of ["over
 "$atlas_scratch/install/bin/atlas" flow "$atlas_scratch/project" --path src/main.rs --function main --depth 1 --backend pele --format svg --out "$atlas_scratch/work/flow.svg"
 node --input-type=module -e 'import fs from "node:fs"; const svg=fs.readFileSync("flow.svg","utf8"); if(!svg.includes("return to")||!svg.includes("transformer.rs")) process.exit(1);'
 
-"$atlas_scratch/install/bin/atlas" overview "$atlas_scratch/project" --adapter "$atlas_scratch/install/bin/atlas-girard" --json > adapter.json
-node --input-type=module -e 'import fs from "node:fs"; const result=JSON.parse(fs.readFileSync("adapter.json","utf8")); if(result.adapter.producer.name!=="atlas-girard"||result.adapter.snapshot_id!==result.snapshot.id) process.exit(1);'
+"$atlas_scratch/install/bin/atlas" overview "$atlas_scratch/project" --adapter "$atlas_adapter" --json > adapter.json
+node --input-type=module -e 'import fs from "node:fs"; const result=JSON.parse(fs.readFileSync("adapter.json","utf8")); if(result.adapter.producer.name!=="example-pipeline"||result.adapter.snapshot_id!==result.snapshot.id) process.exit(1);'
 
 # Shared-library source reports also run without their source checkout.
 for atlas_question in spans nontest-loc concentration; do

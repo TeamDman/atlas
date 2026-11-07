@@ -146,7 +146,7 @@ impl Snapshot {
         Ok(one)
     }
     /// Resolve a qualified module path, or a globally unique leaf selector.
-    /// Girard names stages by unique leaf (e.g. backend::admit as admit).
+    /// A project may name modules by unique leaf (e.g. backend::admit as admit).
     /// A leaf is not a claim of top-level Rust scope; ambiguity always refuses.
     pub fn module_root(&self, name: &str) -> Result<String> {
         let roots = self

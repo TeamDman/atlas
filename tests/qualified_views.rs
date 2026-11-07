@@ -72,7 +72,52 @@ fn body_call_is_seen_but_same_spelled_variant_and_generic_parameter_are_not_type
     }
     v.diagram.validate().unwrap();
 }
-const DECLARATIONS: &str = "pub mod build;\npub mod run;\npub mod observe;\nenum Layer{Stage,Instrument}\nconst MODULES:[(&str,Option<()>,Layer,&[&str]);3]=[(\"build\",None,Layer::Stage,&[]),(\"run\",None,Layer::Stage,&[]),(\"observe\",None,Layer::Instrument,&[])];\nconst SURFACES:[(&str,&str,&[&str]);2]=[(\"build\",\"build\",&[]),(\"run\",\"Runtime\",&[])];\n";
+const DECLARATIONS: &str = "pub mod build;\npub mod run;\npub mod observe;\nenum Layer{Stage,Instrument}\nconst LAYERS:[(&str,&str,Layer);3]=[(\"build\",\"build\",Layer::Stage),(\"run\",\"Runtime\",Layer::Stage),(\"observe\",\"\",Layer::Instrument)];\n";
+/// Reads `LAYERS` rows of (module, entry, layer); a test-local declaration convention.
+struct Layers;
+impl adapter::ProjectAdapter for Layers {
+    fn name(&self) -> &'static str {
+        "test-layers"
+    }
+    fn version(&self) -> &'static str {
+        "0"
+    }
+    fn declarations(
+        &self,
+        input: &adapter::Request,
+    ) -> atlas::Result<atlas::architecture::Architecture> {
+        use atlas::architecture::{Architecture, Kind, Module};
+        let layers = input.snapshot.constant(&input.source, "LAYERS")?;
+        let mut modules = Vec::new();
+        for row in layers.value.array().ok_or("LAYERS must be an array")? {
+            let [name, entry, layer] = row.tuple().ok_or("row must be a tuple")? else {
+                return Err("row expects module, entry, layer".into());
+            };
+            let name = name.string().ok_or("module must be a string")?;
+            let kind = match layer.path().and_then(|p| p.last()).map(String::as_str) {
+                Some("Stage") => Kind::Stage,
+                Some("Instrument") => Kind::Instrument,
+                _ => return Err("unsupported layer".into()),
+            };
+            modules.push(Module {
+                name: name.into(),
+                kind,
+                label: None,
+                path: input.snapshot.module_root(name)?,
+                entry: entry.string().ok_or("entry must be a string")?.into(),
+                types: vec![],
+                dependencies: vec![],
+                directory: false,
+            });
+        }
+        Ok(Architecture {
+            schema: 1,
+            provenance: vec![layers.id()],
+            modules,
+            workflows: vec![],
+        })
+    }
+}
 #[test]
 fn creation_calls_and_refusal_contracts_survive_a_success_focused_question() {
     let f = Fixture::new(&[(
@@ -196,14 +241,9 @@ fn source_declarations_choose_apis_but_not_edges_and_instruments_survive() {
         "src/lib.rs".into(),
     )
     .unwrap();
-    let reply = adapter::invoke(
-        std::path::Path::new(env!("CARGO_BIN_EXE_atlas-girard")),
-        f.path(),
-        &input,
-    )
-    .unwrap();
+    let reply = adapter::adapt(&Layers, &input);
+    adapter::validate_reply(&input, &reply).unwrap();
     let a = reply
-        .reply
         .architecture()
         .unwrap()
         .clone()

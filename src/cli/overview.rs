@@ -1,4 +1,4 @@
-//! Read source declarations directly; no compiled project exporter or maintained profile.
+//! Ask an explicit declaration adapter to interpret source constants, then project them.
 use crate::cli::output::artifact as artifact_output;
 use atlas::{
     Result,
@@ -15,9 +15,9 @@ pub(crate) struct Options {
     /// Normalized declaration source path supplied to the adapter.
     #[arg(long, default_value = "src/lib.rs")]
     declarations: String,
-    /// Explicit declaration adapter executable. Defaults to the co-installed Girard adapter.
+    /// Declaration adapter executable that interprets the project's declarations.
     #[arg(long)]
-    adapter: Option<PathBuf>,
+    adapter: PathBuf,
     #[command(flatten)]
     output: artifact_output::Options,
 }
@@ -33,11 +33,7 @@ pub(crate) fn run(
         Snapshot::from_facts(graph, &facts, &options.declarations)?,
         options.declarations,
     )?;
-    let program = options.adapter.unwrap_or(
-        std::env::current_exe()?
-            .with_file_name(format!("atlas-girard{}", std::env::consts::EXE_SUFFIX)),
-    );
-    let program = program.canonicalize()?;
+    let program = options.adapter.canonicalize()?;
     let invocation = adapter::invoke(&program, root, &input)?;
     if !invocation.diagnostics.is_empty() {
         eprint!("{}", invocation.diagnostics);

@@ -99,9 +99,9 @@ pub(super) enum Command {
         after_help = "Question: which representation observations changed between revisions? Population: production declarations selected by the optional saved query. Evidence: qualified signature, field and construction observations, not inferred behavior. Scope: --before, optional --after and --query. Example: atlas compare --before HEAD~1 --backend ascii"
     )]
     Compare(comparison::Options),
-    /// Derive a default representation picture from MODULES/SURFACES in source.
+    /// Draw a representation overview from project declarations read by an adapter.
     #[command(
-        after_help = "Question: which representation contracts follow the declared stage surfaces? Population: production declarations reached from MODULES/SURFACES or a supplied declaration adapter. Evidence: signatures and source declarations, not execution order. Scope: selected Cargo root and adapter input. Missing declarations refuse. Example: atlas overview --backend pele --out target/atlas/overview.svg"
+        after_help = "Question: which representation contracts follow the declared stage surfaces? Population: production declarations reached from the modules and entry points the adapter reads from source constants. Evidence: signatures and source declarations, not execution order. Scope: selected Cargo root, --declarations file and --adapter executable. Missing declarations refuse. Example: atlas overview --adapter ./my-adapter --backend pele --out target/atlas/overview.svg"
     )]
     Overview(overview::Options),
     /// Qualified observed file relationships, with calls/signatures/fields kept distinct.

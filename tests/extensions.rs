@@ -1,4 +1,6 @@
 //! Public contracts are exercised by independent binaries, not only in-crate helpers.
+#[path = "support/adapter.rs"]
+mod example_adapter;
 mod support;
 use atlas::{
     adapter::{self, Request, Snapshot},
@@ -12,7 +14,7 @@ use std::{
     process::Command,
 };
 use support::Fixture;
-const SOURCE: &str = "pub mod build;\npub mod data;\nenum Layer{Stage,Vocabulary}\nconst MODULES:&[(&str,Option<()>,Layer,&[&str])]=&[(\"build\",None,Layer::Stage,&[]),(\"data\",None,Layer::Vocabulary,&[])];\nconst SURFACES:&[(&str,&str,&[&str])]=&[(\"build\",\"build\",&[\"Graph\"])];\n";
+const SOURCE: &str = "pub mod build;\npub mod data;\nenum Role{Pass,Resource}\nconst PIPELINE:&[(&str,&str,Role,&str)]=&[(\"build\",\"build\",Role::Pass,\"Compiler pass\"),(\"data\",\"\",Role::Resource,\"Shared data\")];\n";
 fn project() -> Fixture {
     Fixture::new(&[
         ("src/lib.rs", SOURCE),
@@ -43,15 +45,15 @@ fn input(f: &Fixture) -> (Request, representations::Facts) {
     )
 }
 fn plugin() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_atlas-girard"))
+    example_adapter::example()
 }
 
 #[test]
-fn official_adapter_preserves_custody_and_does_not_edit_inspected_source() {
+fn example_adapter_preserves_custody_and_does_not_edit_inspected_source() {
     let f = project();
     let (request, _) = input(&f);
     let reply = adapter::invoke(plugin(), f.path(), &request).unwrap().reply;
-    assert_eq!(reply.producer.name, "atlas-girard");
+    assert_eq!(reply.producer.name, "example-pipeline");
     assert_eq!(reply.snapshot_id, request.snapshot.id);
     let a = reply
         .architecture()
@@ -60,10 +62,7 @@ fn official_adapter_preserves_custody_and_does_not_edit_inspected_source() {
         .bind(f.path())
         .unwrap();
     assert_eq!(a.modules.len(), 2);
-    assert_eq!(
-        a.provenance,
-        ["src/lib.rs::MODULES", "src/lib.rs::SURFACES"]
-    );
+    assert_eq!(a.provenance, ["src/lib.rs::PIPELINE"]);
     assert_eq!(
         fs::read_to_string(f.path().join("src/lib.rs")).unwrap(),
         SOURCE
@@ -203,41 +202,21 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
 
 #[test]
 fn independently_built_adapters_use_only_public_api_and_the_stock_cli() {
-    let consumer = Fixture::new(&[]);
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    consumer.write("Cargo.toml",&format!("[package]\nname='external-atlas-consumer'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\natlas={{path={:?}}}\n[[bin]]\nname='girard-adapter'\npath='src/girard.rs'\n[[bin]]\nname='foreign-adapter'\npath='src/foreign.rs'\n",root.to_str().unwrap()));
-    consumer.write("src/girard.rs", include_str!("../src/bin/atlas-girard.rs"));
-    consumer.write(
-        "src/foreign.rs",
-        include_str!("../examples/foreign-adapter.rs"),
-    );
     let cli = Path::new(env!("CARGO_BIN_EXE_atlas"));
     let before = fs::read(cli).unwrap();
-    let build = Command::new("cargo")
-        .args(["build", "--offline", "--quiet"])
-        .current_dir(consumer.path())
-        .env("CARGO_TARGET_DIR", root.join("target/adapter-consumer"))
-        .output()
-        .unwrap();
-    assert!(
-        build.status.success(),
-        "{}",
-        String::from_utf8_lossy(&build.stderr)
-    );
+    let adapter = plugin();
     assert_eq!(
         before,
         fs::read(cli).unwrap(),
         "building a public consumer does not rebuild the stock CLI"
     );
+    assert!(adapter.starts_with(example_adapter::consumer_target()));
     let f = project();
-    let girard = root
-        .join("target/adapter-consumer/debug/girard-adapter")
-        .with_extension(std::env::consts::EXE_EXTENSION);
     let run = Command::new(cli)
         .arg("overview")
         .arg(f.path())
         .arg("--adapter")
-        .arg(girard)
+        .arg(adapter)
         .arg("--json")
         .output()
         .unwrap();
@@ -248,30 +227,25 @@ fn independently_built_adapters_use_only_public_api_and_the_stock_cli() {
     );
     let result: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
     assert_eq!(result["adapter"]["producer"]["version"], "0.0.0");
-    f.write("src/lib.rs","pub mod build;\npub mod data;\nenum Role{Pass,Resource} const PIPELINE:&[(&str,&str,Role,&str)]=&[(\"build\",\"build\",Role::Pass,\"Compiler pass\"),(\"data\",\"\",Role::Resource,\"Shared data\")];");
-    let foreign = root
-        .join("target/adapter-consumer/debug/foreign-adapter")
-        .with_extension(std::env::consts::EXE_EXTENSION);
-    let run = Command::new(cli)
-        .arg("overview")
-        .arg(f.path())
-        .arg("--adapter")
-        .arg(foreign)
-        .arg("--json")
-        .output()
-        .unwrap();
-    assert!(
-        run.status.success(),
-        "{}",
-        String::from_utf8_lossy(&run.stderr)
-    );
-    let result: serde_json::Value = serde_json::from_slice(&run.stdout).unwrap();
     let modules = result["overview"]["architecture"]["modules"]
         .as_array()
         .unwrap();
     assert_eq!(modules[0]["label"], "Compiler pass");
     assert_eq!(modules[1]["kind"], "support");
     assert_eq!(modules[1]["label"], "Shared data");
+}
+
+#[test]
+fn overview_requires_an_explicit_adapter() {
+    let f = project();
+    let run = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        .arg("overview")
+        .arg(f.path())
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!run.status.success());
+    assert!(String::from_utf8_lossy(&run.stderr).contains("--adapter"));
 }
 
 #[cfg(unix)]

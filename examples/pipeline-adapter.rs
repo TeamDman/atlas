@@ -1,4 +1,17 @@
-//! A different project's vocabulary, implemented solely through the public adapter contract.
+//! An example declaration adapter, built only on the public adapter contract.
+//!
+//! It reads a literal `PIPELINE` table from the declaration file:
+//!
+//! ```text
+//! enum Role { Pass, Resource }
+//! const PIPELINE: &[(&str, &str, Role, &str)] = &[
+//!     ("parse", "parse", Role::Pass, "Parser"),
+//!     ("ast", "", Role::Resource, "Syntax tree"),
+//! ];
+//! ```
+//!
+//! Each row names a module, its entry function, its role and a display label.
+//! Copy this file to start an adapter for your own project's convention.
 #![expect(
     clippy::print_stderr,
     reason = "the adapter executable reports failures on stderr, reserving stdout for its protocol"
@@ -8,10 +21,10 @@ use atlas::{
     adapter::{self, ProjectAdapter, Request},
     architecture::{Architecture, Kind, Module},
 };
-struct Foreign;
-impl ProjectAdapter for Foreign {
+struct Pipeline;
+impl ProjectAdapter for Pipeline {
     fn name(&self) -> &'static str {
-        "example-compiler"
+        "example-pipeline"
     }
     fn version(&self) -> &'static str {
         env!("CARGO_PKG_VERSION")
@@ -54,8 +67,8 @@ impl ProjectAdapter for Foreign {
     }
 }
 fn main() {
-    if let Err(e) = adapter::serve(&Foreign) {
-        eprintln!("foreign adapter: {e}");
+    if let Err(e) = adapter::serve(&Pipeline) {
+        eprintln!("pipeline adapter: {e}");
         std::process::exit(1);
     }
 }
