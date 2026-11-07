@@ -4,11 +4,11 @@ A read-only Rust source intelligence library and CLI. One source model supports 
 
 ## Work
 
-Read ARCHITECTURE.md for code ownership and execution flow. Read PROVENANCE.md before changing extracted code and `peat <path|topic>` before changing existing work. One writer per desk; create isolated desks with `~/.nix-config/scripts/desk spawn <purpose>`. Run checks before publishing. Never change an inspected project's source as a side effect of scanning or rendering it.
+Read ARCHITECTURE.md for code ownership and execution flow, and CONTRIBUTING.md for the workflow. Run `just check` before publishing. Never change an inspected project's source as a side effect of scanning or rendering it. Keep project-specific conventions out of Atlas: they belong in adapters and wrappers owned by the projects that use them.
 
 ## Build
 
-Rust edition 2024 on Rust 1.99.1, with rustfmt and the shared workspace lint table aligned with Murail (default and pedantic Clippy denied, plus its safety restrictions). Both packages inherit the workspace lints. Keep the pin, manifests and CI consistent; do not retain an older consumer compiler as an implicit compatibility requirement. Use `cargo add` for dependencies and preserve Cargo.lock. `just check` runs the local gates. `just check-install` verifies an installed binary outside its checkout. Pele needs Node >=20; its pinned licensed bundle ships in the binary. npm is only needed to verify/update the vendor source, not to use Atlas.
+Rust edition 2024 on Rust 1.99.1, with rustfmt and the workspace lint table (default and pedantic Clippy denied, plus safety restrictions). Both packages inherit the workspace lints. Keep the pin, manifests and CI consistent. Use `cargo add` for dependencies and preserve Cargo.lock. `just check` runs the local gates. `just check-install` verifies an installed binary outside its checkout. Pele needs Node >=20; its pinned licensed bundle ships in the binary. npm is only needed to verify/update the vendor source, not to use Atlas.
 
 ## Model
 
@@ -23,7 +23,6 @@ source measurements and fixed rule mechanisms; project wrappers own authored
 legislation and local authority resolution. Report-only observations, violations
 and unavailable required evidence are distinct. A partial reading never claims
 the project's complete PASS.
-
 
 ## Organization
 

@@ -1,48 +1,34 @@
-# Diagrams and source evidence
+# Diagrams
 
-These views explain different relationships in written Rust source. Each keeps
-its source witnesses and limitations.
+Each Atlas view answers one question about written Rust source and keeps the
+source sites behind every box and edge. Text output is the default; add
+`--backend pele` for SVG. Every view also writes a JSON evidence file so you can
+check exactly what was observed and what was left unknown.
 
-## The default overview
+| Question | Command |
+| --- | --- |
+| Which files call, mention or store each other's types? | `dependencies` |
+| Who produces, accepts and stores a type? | `representations` |
+| How does one function's control flow branch and return? | `flow` |
+| How did those contracts change between two revisions? | `compare` |
+| How do the stages you declared hand types to each other? | `overview` |
+| How do declared groups or lexical mentions connect? | `map`, `program` |
 
-`overview` uses the co-installed `atlas-girard` adapter to interpret literal
-`MODULES` and `SURFACES` declarations from `src/lib.rs`
-(or `--declarations FILE`). Their shape is the one Girard already uses: module
-name, part, layer, allowed dependencies; then stage name, entry, surface types.
-The host supplies constant syntax and Cargo module mounts from its shared parse;
-the adapter neither reparses nor compiles/executes the inspected crate. Accepted
-declarations are checked against their source snapshot before binding.
-Computed/nonliteral declarations refuse. Use `--adapter PATH` for a separately
-built declaration adapter; its producer, witnesses and diagnostics remain in JSON.
-
-The main forms are successful output types of declared stage entry functions.
-Public surface methods join the picture when they produce a form another stage
-accepts or construct an entry type. Isolated metadata/error alternatives are not
-promoted merely because a surface lists them. All selected type/API/source
-witnesses and the selection rule remain in JSON. Unexpected literal constructors
-outside the APIs' resolved call reach remain visible.
-
-Verification instruments have a separate panel of observed direct calls. Calls
-are not mixed into contract arrows. Declared dependencies do not become observed
-edges, and do not filter unexpected relationships out. A declared stage's entry
-with no returned representation can still appear as a sink API. This is a contract
-view, not an execution or termination proof.
-
-Projects without these declarations use a saved query; Atlas never invents an
-architecture for them. Start with `examples/queries/atlas.json` to inspect Atlas
-itself:
+Atlas never invents an architecture for a project. A diagram's selection comes
+from a saved question, a command-line selector or declarations you wrote. To
+explore Atlas itself:
 
 ```sh
-atlas representations . --query examples/queries/atlas.json --backend pele
+atlas representations --query examples/queries/atlas.json --panel all --backend pele
 ```
 
 ## Qualified file relationships
 
 ```sh
-atlas dependencies ROOT src/backend/admit --relation calls
-atlas dependencies ROOT src/backend/admit --relation signatures --backend pele
-atlas dependencies ROOT src/backend/admit --relation fields --backend pele
-atlas dependencies ROOT src/backend/admit --relation all --json
+atlas dependencies --scope src/backend --relation calls
+atlas dependencies --scope src/backend --relation signatures --backend pele
+atlas dependencies --scope src/backend --relation fields --backend pele
+atlas dependencies --scope src/backend --relation all --json
 ```
 
 Every displayed edge has positive source witnesses, with file, line, source item,
@@ -56,9 +42,9 @@ in the view.
 ## Representations and producers
 
 ```sh
-atlas representations ROOT --type Graph --panel producers
-atlas representations ROOT --type Graph,Checked,Executable --panel contracts --backend pele
-atlas representations ROOT --query question.json --panel all --backend pele
+atlas representations --type Graph --panel producers
+atlas representations --type Graph,Checked,Executable --panel contracts --backend pele
+atlas representations --query question.json --panel all --backend pele
 ```
 
 A saved question selects source symbols, never arrows:
@@ -107,8 +93,8 @@ require a narrower question or ASCII.
 ## Compare a change
 
 ```sh
-atlas compare ROOT --before HEAD
-atlas compare ROOT --before OLD_COMMIT --after NEW_COMMIT --query question.json --backend pele
+atlas compare --before HEAD
+atlas compare --before OLD_COMMIT --after NEW_COMMIT --query question.json --backend pele
 ```
 
 The same selection is applied to both sources. Defaults compare the exact `before`
@@ -127,14 +113,40 @@ requires a repository-root Cargo workspace; subdirectory workspaces and external
 path dependencies in a historical snapshot may refuse. Git submodule contents are
 not materialized. No semantic equivalence or rename inference is claimed.
 
+## Overview from declared stages
+
+```sh
+atlas overview --adapter path/to/adapter --backend pele
+atlas overview --adapter path/to/adapter --declarations src/stages.rs --json
+```
+
+`overview` draws the representation contracts between the stages a project
+declares in its own source, for example a literal `const PIPELINE` table. A
+**declaration adapter**, a small executable you build against the `atlas`
+library, interprets that table. Atlas gives the adapter the constant's syntax and
+the module mounts from its own parse; the adapter does not reparse or compile the
+project. Atlas then checks the reply against the source snapshot before drawing
+anything. Computed declarations are refused. See
+[extending Atlas](extensions.md) for the protocol and
+[`examples/pipeline-adapter.rs`](../examples/pipeline-adapter.rs) for a complete
+adapter.
+
+The main forms are the successful output types of each stage's entry function.
+Public methods join the picture when they produce a form that another stage
+accepts, or construct an entry type. Unexpected literal constructors outside the
+entry functions' resolved reach stay visible. Instrument modules get a separate
+panel of their observed direct calls. Declared dependencies never become observed
+edges, and they never hide unexpected relationships. This is a contract view, not
+an execution order.
+
 ## Navigation and source-body views
 
 ```sh
-atlas census ROOT --json
-atlas name ROOT AdmittedPlan
-atlas module ROOT src/backend/admit
-atlas name ROOT AdmittedPlan --relations --json
-atlas flow ROOT --path src/lib.rs --function compile_with --depth 1 --backend pele --format svg
+atlas census --json
+atlas name Plan
+atlas module src/backend
+atlas name Plan --relations --json
+atlas flow --path src/lib.rs --function compile_with --depth 1 --backend pele --format svg
 ```
 
 `flow` reads a selected function's expression control: operand evaluation, branches,
@@ -151,8 +163,8 @@ termination. Panics/unwinding, destructors, implicit operator dispatch and macro
 execution are not inferred. Closures, async/try/unsafe blocks, labelled blocks and
 unsupported syntax stay opaque; they are not flattened into ordinary work.
 Compound assignment order depends on types, so it also stays opaque. Call/return
-edges describe the supported ordinary-return path. See the executable controls in
-`tests/source_control.rs` and [qualification notes](reader-qualification.md).
+edges describe the supported ordinary-return path. The executable cases in
+`tests/source_control.rs` show each construct.
 
 `program --architecture PROFILE` and
 `map --architecture PROFILE` remain available for existing callers. Their profiles
@@ -170,7 +182,7 @@ field relationships. This distinction is deliberate; legacy evidence is not sile
 upgraded into a semantic claim. Saved profiles are optional legacy inputs, never
 required for the source-declaration overview.
 
-## Scope and development
+## What qualified facts cover
 
 The shared source facts cover written production structs/enums, signatures, direct
 fields, immediate struct literals and conservative resolved calls. Exact source
@@ -182,17 +194,10 @@ external types as well as unavailable resolution. Name resolution needs unambigu
 Cargo mounts; unusual module-declaration formatting may exceed the lexical discovery
 scanner. None of these unknowns is a proved missing edge.
 
-The library exposes discovery/source models, representation facts/projections,
-qualified dependencies, source-declaration adapters, comparisons, native diagram
-models and ASCII/Pele renderers. Renderers do not inspect source. Read
-[diagram lessons](diagram-lessons.md) for the failed approaches and the graphical
-principles behind the current views, and [PROVENANCE.md](../PROVENANCE.md) for attribution.
-
-`just check` runs formatting, strict Clippy, Rust tests, strict rustdoc and renderer
-tests. `just check-install` tests an installed binary outside its checkout.
-`just verify-vendor` checks the pinned Pele package. Rust is pinned in
-`rust-toolchain.toml`. The crate is MIT OR Apache-2.0; the embedded Pele bundle is MIT.
-
+The `atlas` library exposes the same models: representation facts and
+projections, qualified dependencies, declaration adapters, comparisons, diagram
+models and the ASCII and Pele renderers. Renderers never reopen source. See the
+[library guide](library.md).
 
 ## Named aliases and control detail
 
@@ -225,8 +230,8 @@ Locations witness call sites without asserting an evaluation order.
 ASCII retains the corresponding comparable preparation rows.
 
 Use `preparation_functions` in a saved query for an exact overview, for example
-`[{"name":"least_forms","file":"src/frontend/elaborate/least.rs"},
-{"name":"build","file":"src/frontend/elaborate/program.rs"}]`.
+`[{"name":"lower","file":"src/frontend/lower.rs"},
+{"name":"build","file":"src/frontend/program.rs"}]`.
 Each selector must resolve uniquely and return a selected representation.
 `preparation_files`, when also present, limits those selections to those files.
 Omit function selection to retain all producer-returning rows in the chosen files.

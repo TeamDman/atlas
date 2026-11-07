@@ -1,12 +1,48 @@
 # Atlas
 
-Read Rust code as a system. Atlas is a read-only source analysis library and CLI
-for Cargo projects. It helps you find declarations, inspect dependencies, review
-changes, and draw how representations move through a program.
+Atlas reads a Rust workspace and answers structural questions about it: where a
+name is declared, what changed between two commits, which files call each other,
+how a function's control flow branches, and whether the code still follows the
+architecture you wrote down.
 
-Every relationship carries its evidence. A signature, a written call, a retained
-field and an authored architecture rule mean different things; Atlas keeps them
-separate. Unresolved and ambiguous observations remain visible.
+It is a command-line tool and a Rust library. It never edits the code it reads,
+it never compiles or runs it, and every answer carries the source locations it
+came from.
+
+```console
+$ atlas name SourceGraph
+SourceGraph: 2 declaration sites (ambiguous)
+
+crates/atlas-core/src/source/model.rs:107:SourceGraph [Pub Struct]
+  All source observations for one scan, serialized with a schema version.
+  3 outgoing, 36 incoming candidate-unique, 0 incoming ambiguous
+  pub struct SourceGraph {
+
+crates/atlas-core/src/source/model.rs:116:SourceGraph [Private Impl]
+  0 outgoing, 0 incoming candidate-unique, 0 incoming ambiguous
+  impl SourceGraph {
+```
+
+## Why Atlas
+
+Tools such as rust-analyzer resolve Rust precisely inside an editor. Atlas is for
+the questions you ask about a whole codebase at once, from a terminal, a script,
+a review or a CI job:
+
+- **Orientation.** Count and locate declarations, read a module's surface, and
+  follow a type through the functions that produce and consume it.
+- **Review.** Compare a change with an earlier revision: changed declarations,
+  moved bodies, visibility changes, module size and nesting.
+- **Diagrams.** Draw file dependencies, representation contracts, control flow
+  and before/after comparisons as text or SVG.
+- **Architecture checks.** Test stage ordering, module seams, size budgets and
+  ratchets against a policy file you write.
+
+Atlas does not guess when the source leaves a question open. When a name could
+refer to two declarations, Atlas reports both. When it cannot resolve a call,
+the call is marked unresolved and is never counted as absent. A lexical mention,
+a resolved call, a signature type and a rule you declared are separate kinds of
+evidence, and Atlas never presents one as another.
 
 ## Install
 
@@ -14,121 +50,132 @@ separate. Unresolved and ambiguous observations remain visible.
 cargo install --locked --git https://github.com/flowerornament/atlas.git atlas
 ```
 
-Rust 1.99.1 is required. For reproducible project tooling, add `--rev FULL_COMMIT`.
-The package installs `atlas` and `atlas-girard`; install the whole package.
+Requirements:
 
-Cargo is needed to discover source. Diagram rendering with Pele also needs Node
-20 or newer. The renderer is embedded; npm and network access are not needed to
-render. Revision comparisons need Git and tar. Reading a jj workspace also needs the
-`jj` executable; revision reads never snapshot its working copy.
+- Rust 1.99.1 or newer and Cargo. Atlas uses `cargo metadata` to find source.
+- Node.js 20 or newer for SVG output only. The renderer ships inside the binary,
+  so no npm install or network access is needed.
+- Git (and `tar`) to read earlier revisions. In a [jj](https://github.com/jj-vcs/jj)
+  workspace, Atlas uses `jj` and never snapshots the working copy.
 
-## Read a project
+For reproducible tooling, pin an exact commit with `--rev <commit>`.
 
-Run these from a Cargo project, or add `--root /path/to/project`:
+## Quick tour
+
+Run these commands inside any Cargo project, or pass `--root path/to/project`.
 
 ```sh
-atlas census --population pub-ish              # source and documentation counts
-atlas name MyType --population all --json      # declarations and lexical references
-atlas spans --scope src                        # items and their source boundaries
-atlas concentration --scope src                # block depth and item breadth
-atlas diff HEAD~1 --scope src --items --graph  # changed declarations and relationships
-atlas moved HEAD~1 --scope src                 # exact and rerooted body matches
-atlas visibility HEAD~1 --scope src            # written visibility changes
+# Where am I?
+atlas census                          # files and declarations per kind
+atlas module src/lib.rs               # one module's header, items and imports
+atlas name Config --population all    # every declaration named Config
+
+# What changed? (in jj, use a revset such as @- instead of HEAD~1)
+atlas diff HEAD~1 --items --graph     # changed declarations and their relationships
+atlas moved HEAD~1 --scope src        # bodies that moved, exactly or with new paths
+atlas visibility HEAD~1               # written visibility changes
+
+# How is it shaped?
+atlas spans --scope src               # items and their source spans
+atlas concentration --scope src       # block depth and item breadth per file
 ```
 
-`--json` gives structured observations for scripts and agents. Review and diagram
-commands use `--scope` for workspace paths; stage/seam checks use it for Cargo
-packages. Native navigation also has package/directory selectors. `--population`
-selects each command's supported declaration population; run `atlas COMMAND --help`
-for the exact selection and evidence meaning. Revision examples below use Git's
-`HEAD~1`; in a jj workspace pass a revset such as `main-`, or an exact commit ID.
+Add `--json` to any command for structured output. Run `atlas <command> --help`
+to see what that command counts and what its answer does and does not mean.
 
-## Draw a question
+## Diagrams
 
 ```sh
 atlas dependencies --scope src --relation calls --backend pele
-atlas representations --type MyType --panel producers --backend pele
+atlas flow --path src/main.rs --function main --detail control --backend pele
+atlas representations --type Config --panel producers
 atlas compare --before HEAD~1 --backend pele
-atlas flow --path src/main.rs --function main --detail control --backend pele --format svg
 ```
 
-ASCII is the default. Pele produces a standalone SVG with JSON evidence and a
-Mermaid companion under `target/atlas/`; use `--out PATH.svg` to choose a path.
-These are generated artifacts, not a website or a source file to maintain.
+Text is the default output. With `--backend pele`, Atlas writes a standalone SVG
+under `target/atlas/`, with a JSON evidence file and a Mermaid source beside it.
+Use `--out path.svg` to choose the location.
 
-For a reusable question, save a JSON selection of types and entry functions.
-Named aliases stay visible as handoffs. Select `preparation_functions` in a saved
-question to see which passes share producer implementations; `--detail control`
-folds expression mechanics while retaining branches, loops and early exits.
-Try `examples/queries/atlas.json` on Atlas itself. `overview` can instead read
-explicit project declarations through an adapter; its bundled Girard adapter
-understands `MODULES` and `SURFACES`. Atlas does not invent a project's stages.
+`flow` on this repository's `main` gives:
 
-See [diagram examples and meanings](docs/diagrams.md) and
-[project adapters and renderers](docs/extensions.md).
-
-## Try it on Atlas
-
-From a checkout of this repository, with Atlas installed:
-
-```sh
-atlas name SourceGraph --population all
-atlas flow --path src/main.rs --function main --detail control
-atlas representations --query examples/queries/atlas.json --panel contracts --backend pele --out target/atlas/atlas.svg
-atlas compare --before HEAD~1 --query examples/queries/atlas.json --json
+```text
++-- src/main.rs · main
+|  [n1] fn main
+|  [n2] return from main → ()
+|  [n3] cli::run()
+|  [n4] let Err(error) = cli::run()
+|  [n5] if let Err(error) = cli::run()
+|  [n6] then (true / pattern matches)
+|  [n7] [opaque] eprintln!("atlas: {error}");
+|  [n8] std::process::exit(1)
+|  [n9] else (false / pattern does not match)
 ```
 
-The name card locates the captured source model and its lexical references. The
-flow shows the CLI entry's supported branches and exits. The saved question
-follows `SourceGraph`, `Diagram` and `Artifact`, with files and signature witnesses;
-open `target/atlas/atlas.svg` to inspect it. The comparison asks that same question
-of the previous commit and current source. It reports changed contracts and
-construction sites, rather than claiming changed runtime behavior.
+The macro call is shown as opaque because Atlas does not expand macros. Saved
+questions in JSON make a diagram repeatable; see
+[`examples/queries/atlas.json`](examples/queries/atlas.json) and the
+[diagram guide](docs/diagrams.md).
 
-These are existing source questions, not a profile containing authored arrows.
-Use their source links to check an observation or read what a view leaves unknown.
+## Architecture checks
 
-## Check declared architecture
+`stages`, `seams`, `policy` and `delta` compare captured source with an
+architecture policy you write in TOML: which stages may read which, how large
+modules may grow, which debts are allowed to shrink but not grow. `comments`
+audits documentation coverage. Atlas reports three different outcomes:
 
-`comments`, `stages`, `seams`, `policy` and `delta` provide documentation audits
-and fixed architecture checks. Policy checks require explicit authored input;
-project-specific authority, such as formal-model citations, belongs to the
-project's wrapper. Missing required evidence is unavailable, never PASS.
-These commands do not install themselves into a project's landing gate.
+- **violations**, where the source breaks a rule,
+- **unavailable**, where evidence a rule needs is missing,
+- **observations**, which are reported without any verdict.
+
+Missing evidence is never reported as a pass. See [architecture checks](docs/checks.md).
 
 ## Use the library
 
-`atlas-core` exposes captured source, navigation, qualified analysis, review and
-check reports without the CLI, renderer, Node or a dependency on the inspected
-project. Depend on an exact Git revision:
+The `atlas-core` crate provides the source model, navigation, review reports,
+qualified analysis and checks. It has no CLI, renderer or Node dependency.
 
-```sh
-cargo add atlas-core --git https://github.com/flowerornament/atlas.git --rev FULL_COMMIT
+```toml
+[dependencies]
+atlas-core = { git = "https://github.com/flowerornament/atlas.git", rev = "<commit>" }
 ```
 
-The [library guide](docs/core.md) explains snapshots, populations, evidence and
-embedding. The `atlas` package retains compatibility library paths and owns the
-CLI, adapters and ASCII/Pele rendering.
+```rust,no_run
+use atlas_core::{analysis::Analysis, discovery};
 
-## Limits
-
-Atlas reads written source. It does not expand macros, fully resolve Rust's type
-system, prove runtime ownership, or establish behavioral equivalence. Source-flow
-views retain supported control syntax, with explicit boundaries for unsupported
-or unresolved work. Large diagrams can still be difficult to read. The source
-and uncertainty behind a picture are part of its result. Contract comparison
-refuses duplicate stable identities among observations in the selected question;
-it does not choose a matching arbitrarily.
-
-## Develop
-
-```sh
-just check          # fmt, Clippy, workspace/core tests, rustdoc and renderer tests
-just check-install  # installed tools outside the checkout
-just verify-vendor  # embedded Pele bytes and license
+fn inspect(root: &std::path::Path) -> atlas_core::Result<()> {
+    let snapshot = discovery::snapshot_workspace(root)?;   // read the source once
+    let analysis = Analysis::new(&snapshot)?;              // qualified index over it
+    let facts = analysis.representations()?;               // signatures, fields, calls
+    let (_workflow, _diagram) = analysis.expanded("src/main.rs", "main", 1)?;
+    println!("{} functions", facts.functions.len());
+    Ok(())
+}
 ```
 
-See [architecture and execution flow](ARCHITECTURE.md),
-[provenance](PROVENANCE.md) for the scanner's origins and evidence boundaries,
-and [diagram lessons](docs/diagram-lessons.md) for the design choices.
-Atlas is MIT OR Apache-2.0. Its bundled Pele renderer is MIT.
+The `atlas` package adds the renderers and a JSON protocol for project-specific
+declaration adapters. See the [library guide](docs/library.md) and
+[extending Atlas](docs/extensions.md).
+
+## What Atlas reads, and what it does not
+
+Atlas parses each file with [syn](https://docs.rs/syn) and follows Cargo targets
+and module declarations. It does not expand macros, evaluate `cfg` feature
+combinations, infer types or resolve trait dispatch. It does not prove that a
+path can execute. These limits are stated in each report rather than hidden, and
+a file that fails to parse is reported as a syntax error instead of being skipped.
+
+## Documentation
+
+- [Guide](docs/guide.md): concepts, populations, scopes, revisions and output
+- [Diagrams](docs/diagrams.md): every view and how to read it
+- [Architecture checks](docs/checks.md): policies, stages, seams and deltas
+- [Library](docs/library.md): using `atlas-core` from Rust
+- [Extending Atlas](docs/extensions.md): declaration adapters and renderers
+- [Architecture](ARCHITECTURE.md): how the code is organized
+- [Contributing](CONTRIBUTING.md) and the [changelog](CHANGELOG.md)
+
+## License
+
+Atlas is available under either the [MIT](LICENSE-MIT) or
+[Apache 2.0](LICENSE-APACHE) license, at your option. The bundled
+[Pele](vendor/pele/README.md) renderer is MIT licensed.

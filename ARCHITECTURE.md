@@ -29,7 +29,7 @@ Policy refusal and unavailable evidence retain their distinct structured status.
 Three evidence families explain superficially similar paths. **Lexical** views
 use declaration spellings and approximate mentions; **qualified** views follow
 supported Cargo/import/signature syntax and retain unresolved targets; **native**
-reports preserve the original review/check population and counting contracts.
+reports keep fixed line-based population and counting units for review and checks.
 They share source and grammar without claiming interchangeable meanings.
 Depth-zero flow deliberately reads explicitly selected bodies, including tests;
 it publishes their own workflow evidence and protects those source paths. Expanded
@@ -82,9 +82,10 @@ flow uses the selected qualified index and its captured syntax cache.
 - **`process.rs`** owns concurrent, bounded pipes and direct-child cleanup for
   both renderer and declaration protocols. It observes process status and input
   delivery separately; protocol code decides how to report them.
-- **`adapter/`** owns the explicit declaration protocol and executable selection;
-  `bin/atlas-girard.rs` supplies Girard's declaration convention. Core does not
-  import a project's FM/bead interpretation or execute discovered configuration.
+- **`adapter/`** owns the explicit declaration protocol and executable invocation.
+  Project conventions live in separately built adapters such as
+  `examples/pipeline-adapter.rs`. Core does not import a project's own rule
+  vocabulary or execute discovered configuration.
 
 ## Invariants at the library boundary
 

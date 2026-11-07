@@ -4,36 +4,42 @@ Atlas separates source observations, project declarations, view models and outpu
 Its Rust library supports embedding. Independently installed declaration adapters
 use a small JSON protocol; they do not link into the running CLI.
 
-## Use a declaration adapter
+## Declaration adapters
+
+Many projects already describe their own structure in source: a table of
+pipeline stages, a list of layers, a registry of entry points. A declaration
+adapter teaches Atlas to read that convention, so `atlas overview` can draw the
+project the way its authors describe it.
 
 ```sh
-atlas overview /path/to/project --adapter /path/to/my-adapter --backend pele
-atlas overview /path/to/project --adapter /path/to/my-adapter --json
+atlas overview --adapter path/to/my-adapter --backend pele
+atlas overview --adapter path/to/my-adapter --declarations src/stages.rs --json
 ```
 
-The adapter path is explicit. Atlas does not execute arbitrary commands discovered
-in project configuration or download plugins. When `--adapter` is omitted, the
-compatibility default is the official `atlas-girard` executable installed beside
-`atlas`. Install the complete package to obtain both binaries; an installation
-restricted to `--bin atlas` cannot provide the default adapter.
+The adapter is a separate executable that you pass explicitly. Atlas never runs
+commands it finds in project configuration, and it never downloads plugins.
+`--declarations` names the source file to read (default `src/lib.rs`). The
+adapter receives the literal constant syntax that Atlas has already parsed, so it
+does not compile the project or parse its source again.
 
-Girard's adapter reads MODULES/SURFACES from the source file selected by
-`--declarations`, default `src/lib.rs`. It interprets normalized constant syntax
-provided by Atlas, without compiling the inspected project or parsing its source
-again. A different adapter can interpret another convention.
-
-The accepted declarations choose APIs, groups and permissions. They never supply
-observed call edges. The JSON evidence includes the reply, producer name/version,
-source snapshot and diagnostics so this distinction remains inspectable.
+Declarations decide which modules count as stages, what their entry functions
+are and which types they expose. They never supply observed call edges. The JSON
+evidence records the adapter's reply, its name and version, the source snapshot
+and any diagnostics, so you can always see which parts came from declarations.
 
 ## Write an adapter
 
-Use the public `adapter::ProjectAdapter` interface and call `adapter::serve` from
-the executable's main function. The complete examples are
-[`src/bin/atlas-girard.rs`](../src/bin/atlas-girard.rs) and
-[`examples/foreign-adapter.rs`](../examples/foreign-adapter.rs). Both use only
-public Atlas APIs. The latter interprets a different PIPELINE table with project
-labels and a generic support role.
+Implement `adapter::ProjectAdapter` and call `adapter::serve` from `main`.
+[`examples/pipeline-adapter.rs`](../examples/pipeline-adapter.rs) is a complete
+adapter for a `PIPELINE` table. Copy it as a starting point:
+
+```sh
+cargo build --example pipeline-adapter
+atlas overview --adapter target/debug/examples/pipeline-adapter
+```
+
+A project usually keeps its adapter in its own repository, as a small binary
+that depends on `atlas` at a pinned revision.
 
 `Request` provides the selected declaration file, normalized constant syntax and
 production-file fingerprints/module mounts. `Snapshot::constant` refuses absent
@@ -77,19 +83,9 @@ errors for other families. Pele honors HTML wrapping while preserving the SVG an
 Mermaid companions; ASCII returns text. External renderer processes and arbitrary
 new view schemas are outside this first interface.
 
-## Compatibility and limits
+## Limits
 
-The 0.5 release removes the library's Girard-specific `architecture::source::read`;
-use the declaration adapter contract instead. Existing CLI default overview usage
-is preserved when both package binaries are installed. Existing saved questions,
-graph renderers and direct view-rendering helpers remain available.
-
-Source snapshots cover the supplied file manifest/bytes, not an atomic filesystem
-transaction. Fingerprints are non-cryptographic and producer names are self-reported.
-The underlying Rust scanner's documented limits still apply. This interface does
-not qualify replacing Murail's FM/policy or Anneal's audits; see the
-[cross-project comparison](integration-comparison.md).
-
-The [design contract](design/extensions.md) records the precise boundary and its
-qualification criteria. Independent-consumer and refusal cases live in
-`tests/extensions.rs`.
+Source snapshots cover the supplied file manifest and bytes, not an atomic
+filesystem transaction. Fingerprints detect change; they are not cryptographic.
+Producer names are self-reported. The scanner limits in the [guide](guide.md)
+still apply. Independent-consumer and refusal cases live in `tests/extensions.rs`.
