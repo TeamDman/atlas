@@ -275,14 +275,16 @@ impl Comparison {
             self.after,
             self.changes.len()
         );
+        // A multi-line value (several fields) stays indented under its label.
+        let value = |v: Option<&str>| v.unwrap_or("absent").replace('\n', "\n    ");
         for c in &self.changes {
             write!(
                 out,
                 "\n[{}] {}\n  before: {}\n  after: {}\n",
                 c.category,
                 c.subject,
-                c.before.as_deref().unwrap_or("absent"),
-                c.after.as_deref().unwrap_or("absent")
+                value(c.before.as_deref()),
+                value(c.after.as_deref())
             )
             .expect("formatting into a String cannot fail");
         }
