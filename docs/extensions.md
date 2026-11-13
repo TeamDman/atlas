@@ -1,91 +1,190 @@
 # Extending Atlas
 
-Atlas separates source observations, project declarations, view models and output.
-Its Rust library supports embedding. Independently installed declaration adapters
-use a small JSON protocol; they do not link into the running CLI.
+Atlas has two extension points:
+
+- A **declaration adapter** teaches Atlas how your project describes its own
+  structure, so `atlas overview` can draw it.
+- A **rendering backend** draws Atlas's diagrams in a new output format.
+
+To build tools on Atlas's analysis instead, see the [library guide](library.md).
 
 ## Declaration adapters
 
-Many projects already describe their own structure in source: a table of
-pipeline stages, a list of layers, a registry of entry points. A declaration
-adapter teaches Atlas to read that convention, so `atlas overview` can draw the
-project the way its authors describe it.
+### The idea
 
-```sh
-atlas overview --adapter path/to/my-adapter --backend pele
-atlas overview --adapter path/to/my-adapter --declarations src/stages.rs --json
+Many projects already describe their structure somewhere in their code: a
+table of pipeline stages, a list of plugins, a registry of commands. Each
+project writes this differently, so Atlas cannot understand all of them. A
+declaration adapter is a small program that understands one project's
+convention.
+
+The [tutorial project](getting-started.md) lists its stages in `src/lib.rs`:
+
+```rust
+pub enum Role {
+    Pass,
+}
+
+pub const PIPELINE: &[(&str, &str, Role, &str)] = &[
+    ("parse", "parse", Role::Pass, "Parse text"),
+    ("check", "check", Role::Pass, "Check rules"),
+    ("emit", "emit", Role::Pass, "Emit text"),
+];
 ```
 
-The adapter is a separate executable that you pass explicitly. Atlas never runs
-commands it finds in project configuration, and it never downloads plugins.
-`--declarations` names the source file to read (default `src/lib.rs`). The
-adapter receives the literal constant syntax that Atlas has already parsed, so it
-does not compile the project or parse its source again.
+Each row gives a module, its entry function, its role and a label. The
+example adapter in [`examples/pipeline-adapter.rs`](../examples/pipeline-adapter.rs)
+understands exactly this format. Build it, then point `overview` at it:
 
-Declarations decide which modules count as stages, what their entry functions
-are and which types they expose. They never supply observed call edges. The JSON
-evidence records the adapter's reply, its name and version, the source snapshot
-and any diagnostics, so you can always see which parts came from declarations.
+```console
+$ cargo build --example pipeline-adapter     # in your clone of Atlas
+$ cd /tmp/tutorial                             # your copy of the tutorial
+$ atlas overview --adapter path/to/atlas/target/debug/examples/pipeline-adapter
+Representation contracts from declared stage APIs
+Contracts and direct fields, not runtime value flow.
 
-## Write an adapter
-
-Implement `adapter::ProjectAdapter` and call `adapter::serve` from `main`.
-[`examples/pipeline-adapter.rs`](../examples/pipeline-adapter.rs) is a complete
-adapter for a `PIPELINE` table. Copy it as a starting point:
-
-```sh
-cargo build --example pipeline-adapter
-atlas overview --adapter target/debug/examples/pipeline-adapter
+A  REPRESENTATION CONTRACTS
+  src/check.rs:10  check
+    (Tree [tree]) -> (Checked [return · Ok])
+    literal Checked at line 14
+  src/emit.rs:5  emit
+    (Checked [& program]) -> ()
+  src/parse.rs:9  parse
+    () -> (Tree [return])
+    literal Tree at line 10
+...
 ```
 
-A project usually keeps its adapter in its own repository, as a small binary
-that depends on `atlas` at a pinned revision.
+Compare this with `atlas representations` in the
+[getting-started tour](getting-started.md#6-follow-a-type): there, `emit` was
+missing because it does not return a selected type. Here the adapter named
+`emit` as a stage's entry function, so it appears. Modules the adapter marks
+as instruments, such as logging, would get a separate panel.
 
-`Request` provides the selected declaration file, normalized constant syntax and
-production-file fingerprints/module mounts. `Snapshot::constant` refuses absent
-or ambiguous declarations. `Snapshot::module_root` accepts a qualified module path
-or a globally unique leaf; leaves do not imply top-level Rust scope. Computed
-expressions remain opaque. There is no Rust syntax evaluator in the adapter.
+### What happens when `overview` runs
 
-Return `Architecture` with source constant IDs in `provenance`. The host validates
-those references and binds the declarations to the project. It checks consistency
-and source custody, not the truth of your interpretation. Preserve all ambiguity
-and scope limits rather than guessing.
+1. Atlas reads the project and finds the declaration file (`src/lib.rs` by
+   default; choose another with `--declarations`).
+2. It parses the file's constants and sends them to the adapter as JSON on
+   standard input. The adapter does not need to parse Rust or compile the
+   project.
+3. The adapter replies on standard output, saying which modules are stages,
+   what their entry functions are and where each answer came from. Or it
+   refuses, with a reason.
+4. Atlas checks the reply against its own reading of the source: the modules
+   and constants must exist, and the source must not have changed in between.
+5. Atlas draws the diagram from what it observed in the code, organized by the
+   stages the adapter named.
 
-The protocol uses one request/reply on stdin/stdout, version `1`, interface
-`project-declarations/v1`, with an echoed input snapshot ID and producer identity.
-The reply is declarations or an explicit refusal. stdout must contain only JSON;
-stderr is for diagnostics. Request/reply/diagnostic limits are 16 MiB / 2 MiB /
-64 KiB. Incompatible, malformed, oversized or stale results refuse before any
-diagram is written. Successful diagnostics remain available in the invocation
-result and generated evidence. An explicit adapter is trusted executable code,
-not a sandboxed process.
+Declarations decide how the diagram is organized. They never add or remove an
+observed relationship. The JSON evidence records the adapter's name, version
+and reply, so you can always tell which parts came from it.
 
-For embedding, `adapter::adapt` applies the same interface directly, and
-`validate_reply` applies the same reference checks. The process invocation returns
-`Invocation { reply, diagnostics }`. These APIs do not install anything or decide
-a project's landing policy.
+Atlas runs only the adapter you name with `--adapter`. It never runs programs
+named in a project's files, and it never downloads anything. An adapter is
+ordinary code running on your machine, not a sandbox, so only use adapters you
+trust.
 
-## Implement a rendering backend
+### Write an adapter
 
-`render::View` carries one native model: graph, representations (including producer
-tables and retention matrices), comparison rows, or overview. Implement
-`Renderer::render_view` for the families you support. Return `Artifact` documents;
-do not inspect source files to invent a second analysis.
+An adapter is a Rust binary that depends on the `atlas` package. Implement
+`adapter::ProjectAdapter` and call `adapter::serve` from `main`:
 
-ASCII and Pele implement these families through the same entry. View-specific
-meaning, ordering and source evidence belong to the projection. A renderer must
-not convert a table to an edgeless graph to claim support.
+```rust,ignore
+use atlas::{
+    Result,
+    adapter::{self, ProjectAdapter, Request},
+    architecture::{Architecture, Kind, Module},
+};
 
-Existing graph-only `Renderer::render(&Diagram)` implementations remain valid.
-Their default `render_view` accepts graphs and returns typed `UnsupportedView`
-errors for other families. Pele honors HTML wrapping while preserving the SVG and
-Mermaid companions; ASCII returns text. External renderer processes and arbitrary
-new view schemas are outside this first interface.
+struct Pipeline;
+
+impl ProjectAdapter for Pipeline {
+    fn name(&self) -> &'static str {
+        "example-pipeline"
+    }
+    fn version(&self) -> &'static str {
+        env!("CARGO_PKG_VERSION")
+    }
+    fn declarations(&self, input: &Request) -> Result<Architecture> {
+        // Find the constant in the declaration file Atlas already parsed.
+        let pipeline = input.snapshot.constant(&input.source, "PIPELINE")?;
+        // ... turn each row into a Module ...
+    }
+}
+
+fn main() {
+    if let Err(e) = adapter::serve(&Pipeline) {
+        eprintln!("pipeline adapter: {e}");
+        std::process::exit(1);
+    }
+}
+```
+
+The full example is about 75 lines. A good way to start is to copy it into your
+own repository as a small binary crate that depends on `atlas` at a fixed
+commit:
+
+```toml
+[dependencies]
+atlas = { git = "https://github.com/flowerornament/atlas.git", rev = "<commit>" }
+```
+
+Useful pieces of the `Request`:
+
+- `input.snapshot.constant(&input.source, "NAME")` finds a constant. It refuses
+  if the constant is missing or defined twice.
+- The constant's `value` lets you walk literal syntax: `.array()`, `.tuple()`,
+  `.string()`, `.path()`. Anything computed, such as a function call, stays
+  opaque. Adapters cannot evaluate Rust.
+- `input.snapshot.module_root("name")` finds a module's file. It accepts a full
+  module path, or a short name if only one module has that name.
+
+Return an `Architecture` listing each `Module` with its `kind` (`Stage`,
+`Support`, `Instrument` and so on) and its entry function. Its `provenance`
+names the source constants the answer came from (`pipeline.id()`), and Atlas
+checks that they exist. When your convention is ambiguous,
+return an error rather than guessing.
+
+### Protocol details
+
+You only need these if you write an adapter without the `atlas` crate.
+
+- One JSON request on standard input, one JSON reply on standard output.
+  Diagnostics go to standard error.
+- Protocol version `1`, interface `project-declarations/v1`. The reply echoes
+  the request's snapshot ID and names its producer.
+- Size limits: request 16 MiB, reply 2 MiB, diagnostics 64 KiB.
+- A reply that is malformed, too large, for another snapshot or for another
+  protocol version is refused before anything is drawn.
+
+To use an adapter inside another Rust program without a separate process, call
+`adapter::adapt` directly and check the result with `adapter::validate_reply`.
+[`tests/extensions.rs`](../tests/extensions.rs) has working examples, including
+the cases Atlas refuses.
+
+## Rendering backends
+
+Atlas builds each diagram as a *view*: a description of what to draw, already
+selected from the source. A renderer turns a view into an output document. It
+never reads source code itself.
+
+`render::View` is one of four families: a graph, a set of representation
+tables, a list of comparison rows, or an overview. Implement
+`Renderer::render_view` for the families you support, and return `Artifact`
+documents. Return the typed `UnsupportedView` error for the others. Do not
+reshape a view into another family to claim support, such as turning a table
+into a graph with no edges.
+
+The built-in ASCII and Pele renderers both work this way. A custom renderer is
+used from the library; the `atlas` command only offers `--backend ascii` and
+`--backend pele`.
 
 ## Limits
 
-Source snapshots cover the supplied file manifest and bytes, not an atomic
-filesystem transaction. Fingerprints detect change; they are not cryptographic.
-Producer names are self-reported. The scanner limits in the [guide](guide.md)
-still apply. Independent-consumer and refusal cases live in `tests/extensions.rs`.
+- An adapter reads only literal constants. It cannot see computed values or
+  macro output.
+- A file shared by several packages cannot be used as a declaration file yet;
+  the protocol cannot express which package a declaration belongs to.
+- Fingerprints detect changed source but are not cryptographic. An adapter's
+  name and version are whatever it reports.

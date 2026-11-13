@@ -1,0 +1,41 @@
+# Architecture policy for the tutorial project. See docs/checks.md.
+schema = 1
+provenance = "authored"
+
+# Each fact has one home. Atlas checks that the home exists.
+authority = [{ fact = "the syntax tree", home = "src/parse.rs::Tree" }]
+
+# Packages the size and surface rules apply to.
+[population]
+core = ["tutorial"]
+
+# Upper limits on size, in lines that contain code.
+[size]
+core_token_lines = 200
+crate = { tutorial = 200 }
+
+# Upper limit on the number of public declarations per package.
+[surface]
+tutorial = 20
+
+# Which workspace packages each package may depend on.
+[crate_graph]
+rule = [{ name = "tutorial", allowed = [] }]
+
+# The stages, earliest first. A stage may only use earlier stages.
+[[stage_order]]
+crate = "tutorial"
+stages = ["parse", "check", "emit"]
+
+# What each stage may use from earlier stages.
+[stage_reads.tutorial]
+check = { reads = ["parse"] }
+emit = { reads = ["check"] }
+
+# Limits on how large files may grow, and other shape rules.
+[concentration]
+population = ["tutorial"]
+entry_lines = 300
+file_lines = 2000
+conventional_names = []
+header_uncited = { tutorial = 2 }

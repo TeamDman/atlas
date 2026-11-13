@@ -1,0 +1,7 @@
+{
+  "title": "From text to output",
+  "types": [
+    { "name": "Tree", "file": "src/parse.rs" },
+    { "name": "Checked", "file": "src/check.rs" }
+  ]
+}

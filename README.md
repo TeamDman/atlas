@@ -1,181 +1,125 @@
 # Atlas
 
-Atlas reads a Rust workspace and answers structural questions about it: where a
-name is declared, what changed between two commits, which files call each other,
-how a function's control flow branches, and whether the code still follows the
-architecture you wrote down.
+Atlas helps you understand a Rust codebase. It reads the source code of a Cargo
+project and answers questions about how the code is put together:
 
-It is a command-line tool and a Rust library. It never edits the code it reads,
-it never compiles or runs it, and every answer carries the source locations it
-came from.
+- Where is this type or function defined, and what uses it?
+- What changed between two commits?
+- Which files call into which other files?
+- What paths can this function take?
+- Does the code still follow the structure we agreed on?
+
+Atlas is a command-line tool and a Rust library. It only reads your code: it
+never edits it, compiles it or runs it. Every answer points back to the file
+and line it came from, so you can check it yourself.
 
 ```console
-$ atlas name SourceGraph
-SourceGraph: 2 declaration sites (ambiguous)
+$ atlas name check
+check: 2 declaration sites (ambiguous)
 
-crates/atlas-core/src/source/model.rs:107:SourceGraph [Pub Struct]
-  All source observations for one scan, serialized with a schema version.
-  3 outgoing, 36 incoming candidate-unique, 0 incoming ambiguous
-  pub struct SourceGraph {
+src/check.rs:10:check [Pub Fn]
+  Check a parsed tree.
+  2 outgoing, 0 incoming candidate-unique, 0 incoming ambiguous
+  pub fn check(tree: Tree) -> Result<Checked, String> {
 
-crates/atlas-core/src/source/model.rs:116:SourceGraph [Private Impl]
+src/lib.rs:2:check [Pub Mod]
   0 outgoing, 0 incoming candidate-unique, 0 incoming ambiguous
-  impl SourceGraph {
+  pub mod check;
 ```
 
-## Why Atlas
+Here the name `check` belongs to both a function and a module. Atlas shows
+both and says the name is ambiguous, instead of guessing which one you meant.
 
-Tools such as rust-analyzer resolve Rust precisely inside an editor. Atlas is for
-the questions you ask about a whole codebase at once, from a terminal, a script,
-a review or a CI job:
+## Why use Atlas?
 
-- **Orientation.** Count and locate declarations, read a module's surface, and
-  follow a type through the functions that produce and consume it.
-- **Review.** Compare a change with an earlier revision: changed declarations,
-  moved bodies, visibility changes, module size and nesting.
-- **Diagrams.** Draw file dependencies, representation contracts, control flow
-  and before/after comparisons as text or SVG.
-- **Architecture checks.** Test stage ordering, module seams, size budgets and
-  ratchets against a policy file you write.
+Your editor (with rust-analyzer) is the best tool for working on one piece of
+code at a time. Atlas is for questions about the whole project at once, asked
+from a terminal, a script, a code review or a CI job.
 
-Atlas does not guess when the source leaves a question open. When a name could
-refer to two declarations, Atlas reports both. When it cannot resolve a call,
-the call is marked unresolved and is never counted as absent. A lexical mention,
-a resolved call, a signature type and a rule you declared are separate kinds of
-evidence, and Atlas never presents one as another.
+- **Find your way around.** Count what a project contains, look up any name,
+  and list what a module holds.
+- **Review changes.** See which files grew, which functions changed or moved,
+  and which items became more or less public.
+- **Draw diagrams.** Show how files depend on each other, which functions
+  produce and consume a type, and how a function branches. The output is text,
+  or an SVG image.
+- **Check structure.** Write down rules, such as "the parser must not use the
+  code generator" or "this crate stays under 2,000 lines", and have Atlas
+  check every change against them.
+
+Atlas is careful about what it knows. When a name could mean two things, it
+shows both. When it cannot work out what a call refers to, it says so, rather
+than leaving the call out. A missing answer is reported as missing, never as
+"nothing found".
 
 ## Install
+
+You need Rust 1.99.1 or newer.
 
 ```sh
 cargo install --locked --git https://github.com/flowerornament/atlas.git atlas
 ```
 
-Requirements:
+Some features need more tools:
 
-- Rust 1.99.1 or newer and Cargo. Atlas uses `cargo metadata` to find source.
-- Node.js 20 or newer for SVG output only. The renderer ships inside the binary,
-  so no npm install or network access is needed.
-- Git (and `tar`) to read earlier revisions. In a [jj](https://github.com/jj-vcs/jj)
-  workspace, Atlas uses `jj` and never snapshots the working copy.
+- **SVG diagrams** need Node.js 20 or newer. The drawing code is built into
+  Atlas, so there is nothing else to install.
+- **Comparing commits** needs Git and `tar`. In a
+  [jj](https://github.com/jj-vcs/jj) repository, Atlas also needs `jj`, and
+  reads the Git store behind it.
 
-For reproducible tooling, pin an exact commit with `--rev <commit>`.
+To get the same Atlas every time, for example in CI, add `--rev <commit>` to
+the install command.
 
-## Quick tour
+## Try it
 
-Run these commands inside any Cargo project, or pass `--root path/to/project`.
-
-```sh
-# Where am I?
-atlas census                          # files and declarations per kind
-atlas module src/lib.rs               # one module's header, items and imports
-atlas name Config --population all    # every declaration named Config
-
-# What changed? (in jj, use a revset such as @- instead of HEAD~1)
-atlas diff HEAD~1 --items --graph     # changed declarations and their relationships
-atlas moved HEAD~1 --scope src        # bodies that moved, exactly or with new paths
-atlas visibility HEAD~1               # written visibility changes
-
-# How is it shaped?
-atlas spans --scope src               # items and their source spans
-atlas concentration --scope src       # block depth and item breadth per file
-```
-
-Add `--json` to any command for structured output. Run `atlas <command> --help`
-to see what that command counts and what its answer does and does not mean.
-
-## Diagrams
+This repository includes a tiny example project in
+[`examples/tutorial`](examples/tutorial). [Getting started](docs/getting-started.md)
+walks through it step by step. In short:
 
 ```sh
-atlas dependencies --scope src --relation calls --backend pele
-atlas flow --path src/main.rs --function main --detail control --backend pele
-atlas representations --type Config --panel producers
-atlas compare --before HEAD~1 --backend pele
+git clone https://github.com/flowerornament/atlas.git
+cp -r atlas/examples/tutorial /tmp/tutorial
+cd /tmp/tutorial
+
+atlas census                 # what does this project contain?
+atlas name Tree              # where is Tree defined, and what uses it?
+atlas module src/check.rs    # what is in this file?
+atlas flow --path src/main.rs --function main     # what can main do?
+atlas dependencies --relation calls               # which files call which?
 ```
 
-Text is the default output. With `--backend pele`, Atlas writes a standalone SVG
-under `target/atlas/`, with a JSON evidence file and a Mermaid source beside it.
-Use `--out path.svg` to choose the location.
-
-`flow` on this repository's `main` gives:
-
-```text
-+-- src/main.rs · main
-|  [n1] fn main
-|  [n2] return from main → ()
-|  [n3] cli::run()
-|  [n4] let Err(error) = cli::run()
-|  [n5] if let Err(error) = cli::run()
-|  [n6] then (true / pattern matches)
-|  [n7] [opaque] eprintln!("atlas: {error}");
-|  [n8] std::process::exit(1)
-|  [n9] else (false / pattern does not match)
-```
-
-The macro call is shown as opaque because Atlas does not expand macros. Saved
-questions in JSON make a diagram repeatable; see
-[`examples/queries/atlas.json`](examples/queries/atlas.json) and the
-[diagram guide](docs/diagrams.md).
-
-## Architecture checks
-
-`stages`, `seams`, `policy` and `delta` compare captured source with an
-architecture policy you write in TOML: which stages may read which, how large
-modules may grow, which debts are allowed to shrink but not grow. `comments`
-audits documentation coverage. Atlas reports three different outcomes:
-
-- **violations**, where the source breaks a rule,
-- **unavailable**, where evidence a rule needs is missing,
-- **observations**, which are reported without any verdict.
-
-Missing evidence is never reported as a pass. See [architecture checks](docs/checks.md).
-
-## Use the library
-
-The `atlas-core` crate provides the source model, navigation, review reports,
-qualified analysis and checks. It has no CLI, renderer or Node dependency.
-
-```toml
-[dependencies]
-atlas-core = { git = "https://github.com/flowerornament/atlas.git", rev = "<commit>" }
-```
-
-```rust,no_run
-use atlas_core::{analysis::Analysis, discovery};
-
-fn inspect(root: &std::path::Path) -> atlas_core::Result<()> {
-    let snapshot = discovery::snapshot_workspace(root)?;   // read the source once
-    let analysis = Analysis::new(&snapshot)?;              // qualified index over it
-    let facts = analysis.representations()?;               // signatures, fields, calls
-    let (_workflow, _diagram) = analysis.expanded("src/main.rs", "main", 1)?;
-    println!("{} functions", facts.functions.len());
-    Ok(())
-}
-```
-
-The `atlas` package adds the renderers and a JSON protocol for project-specific
-declaration adapters. See the [library guide](docs/library.md) and
-[extending Atlas](docs/extensions.md).
-
-## What Atlas reads, and what it does not
-
-Atlas parses each file with [syn](https://docs.rs/syn) and follows Cargo targets
-and module declarations. It does not expand macros, evaluate `cfg` feature
-combinations, infer types or resolve trait dispatch. It does not prove that a
-path can execute. These limits are stated in each report rather than hidden, and
-a file that fails to parse is reported as a syntax error instead of being skipped.
+Inside your own project, run the same commands from the project's root
+directory, or point Atlas at it with `--root path/to/project`. Add `--json` to
+any command to get machine-readable output, and run `atlas <command> --help` to
+learn exactly what a command counts.
 
 ## Documentation
 
-- [Guide](docs/guide.md): concepts, populations, scopes, revisions and output
-- [Diagrams](docs/diagrams.md): every view and how to read it
-- [Architecture checks](docs/checks.md): policies, stages, seams and deltas
-- [Library](docs/library.md): using `atlas-core` from Rust
-- [Extending Atlas](docs/extensions.md): declaration adapters and renderers
-- [Architecture](ARCHITECTURE.md): how the code is organized
-- [Contributing](CONTRIBUTING.md) and the [changelog](CHANGELOG.md)
+- [Getting started](docs/getting-started.md): a guided tour using the example project
+- [How Atlas works](docs/concepts.md): the ideas behind every command, and a glossary
+- [Diagrams](docs/diagrams.md): each kind of diagram and how to read it
+- [Architecture checks](docs/checks.md): writing rules for your project and checking them
+- [Using the library](docs/library.md): calling Atlas from your own Rust code
+- [Extending Atlas](docs/extensions.md): teaching Atlas your project's conventions
+- [Contributing](CONTRIBUTING.md), [code architecture](ARCHITECTURE.md) and the
+  [changelog](CHANGELOG.md)
+
+## What Atlas does not do
+
+Atlas reads source code the way a careful person would, without running the
+compiler. That means it does not:
+
+- expand macros (a macro call is shown as one opaque step),
+- decide which `#[cfg(...)]` options are active,
+- work out types that the code does not write down,
+- decide which trait implementation a call will use at run time,
+- prove that a path through a function can actually happen.
+
+When one of these limits affects an answer, the output says so.
 
 ## License
 
-Atlas is available under either the [MIT](LICENSE-MIT) or
+Atlas is available under either the [MIT](LICENSE-MIT) or the
 [Apache 2.0](LICENSE-APACHE) license, at your option. The bundled
-[Pele](vendor/pele/README.md) renderer is MIT licensed.
+[Pele](vendor/pele/README.md) diagram renderer is MIT licensed.

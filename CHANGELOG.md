@@ -6,14 +6,19 @@ depend on an exact Git revision.
 
 ## atlas 0.9.0
 
-- **Breaking:** the project-specific overview adapter that earlier versions installed
- beside `atlas` is no longer part of this package, and `atlas overview` now requires `--adapter PATH`. Projects
- keep their declaration adapter in their own repository; see
+- **Breaking:** the project-specific overview adapter that earlier versions
+ installed beside `atlas` is no longer part of this package, and
+ `atlas overview` now requires `--adapter PATH`. Projects keep their
+ declaration adapter in their own repository; see
  [`examples/pipeline-adapter.rs`](examples/pipeline-adapter.rs).
 - The example adapter is renamed from `foreign-adapter` to `pipeline-adapter`
  and reports the producer name `example-pipeline`.
-- Documentation is reorganized into a guide, diagram, checks, library and
- extension pages.
+- Documentation is rewritten for new users: a getting-started tour built on a
+ small example project (`examples/tutorial`), a concepts guide with a glossary,
+ and guides to diagrams, architecture checks (including a policy file
+ reference), the library and extensions.
+- `atlas compare` indents multi-line values, such as a struct's fields, under
+ their label.
 
 ## atlas 0.8.0 / atlas-core 0.3.0
 

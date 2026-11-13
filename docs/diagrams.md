@@ -1,262 +1,275 @@
 # Diagrams
 
-Each Atlas view answers one question about written Rust source and keeps the
-source sites behind every box and edge. Text output is the default; add
-`--backend pele` for SVG. Every view also writes a JSON evidence file so you can
-check exactly what was observed and what was left unknown.
+Each Atlas diagram answers one question about your code. Every box and arrow
+comes from a specific place in the source, and Atlas keeps a record of that
+place. Atlas never draws an arrow it did not see in the code or in a rule you
+wrote.
 
 | Question | Command |
 | --- | --- |
-| Which files call, mention or store each other's types? | `dependencies` |
-| Who produces, accepts and stores a type? | `representations` |
-| How does one function's control flow branch and return? | `flow` |
-| How did those contracts change between two revisions? | `compare` |
-| How do the stages you declared hand types to each other? | `overview` |
-| How do declared groups or lexical mentions connect? | `map`, `program` |
+| Which files call each other, or use each other's types? | [`dependencies`](#which-files-depend-on-which) |
+| Which functions take, return and build a type? | [`representations`](#which-functions-handle-a-type) |
+| What paths can one function take? | [`flow`](#what-a-function-does) |
+| How did a type's functions and fields change between two commits? | [`compare`](#how-a-change-affected-a-type) |
+| How do the stages my project declares hand data to each other? | [`overview`](#an-overview-from-declared-stages) |
+| How do the groups in my architecture profile connect? | [`map`, `program`](#older-views-map-and-program) |
 
-Atlas never invents an architecture for a project. A diagram's selection comes
-from a saved question, a command-line selector or declarations you wrote. To
-explore Atlas itself:
+The examples on this page use the [tutorial project](getting-started.md).
 
-```sh
-atlas representations --query examples/queries/atlas.json --panel all --backend pele
-```
+## Text and images
 
-## Qualified file relationships
+Every diagram prints as text by default. To draw an image, add
+`--backend pele` (this needs Node.js 20 or newer):
 
 ```sh
-atlas dependencies --scope src/backend --relation calls
-atlas dependencies --scope src/backend --relation signatures --backend pele
-atlas dependencies --scope src/backend --relation fields --backend pele
-atlas dependencies --scope src/backend --relation all --json
+atlas dependencies --relation calls --backend pele
 ```
 
-Every displayed edge has positive source witnesses, with file, line, source item,
-target item and evidence kind. Calls use conservative path/receiver resolution;
-signature types and direct field types use AST type positions, not a lexical word
-match. Enum variants and generic parameters do not become same-spelled type edges.
-The physical scope selects both endpoints. Observations outside it and unresolved
-calls remain in JSON; they are not claims of absence. Disconnected files remain
-in the view.
+Atlas saves the image under `target/atlas/`; use `--out path/to/file.svg` to
+choose another location. Atlas also saves:
 
-## Representations and producers
+- a `.mmd` file next to the image, with the same diagram in
+  [Mermaid](https://mermaid.js.org/) format,
+- a `.json` file with all the evidence, including things it could not resolve.
+  `flow` and `map` write it under `target/atlas/`, or to `--evidence-dir`.
+
+`flow`, `map` and `program` wrap the image in an HTML page by default. Add
+`--format svg` to get the image alone.
+
+## Which files depend on which
 
 ```sh
-atlas representations --type Graph --panel producers
-atlas representations --type Graph,Checked,Executable --panel contracts --backend pele
-atlas representations --query question.json --panel all --backend pele
+atlas dependencies --relation calls
+atlas dependencies --relation signatures
+atlas dependencies --relation fields
+atlas dependencies --relation all --scope src/backend
 ```
 
-A saved question selects source symbols, never arrows:
+`dependencies` draws one box per file and one arrow for each way a file uses
+another. There are three kinds of use, and you choose which to draw:
+
+- **calls**: a function in one file calls a function in the other.
+- **signatures**: a function's parameters or return type name a type from the
+  other file.
+- **fields**: a struct or enum field has a type from the other file.
+
+```text
+RELATIONSHIPS
+  [check.rs] --signature names: check.tree : Tree (1 sites)--> [parse.rs]
+  [emit.rs] --signature names: emit.program : &Checked (1 sites)--> [check.rs]
+```
+
+Read the first arrow as: in `check.rs`, the parameter `tree` of function
+`check` has type `Tree`, which is defined in `parse.rs`. "1 sites" means this
+happens in one place.
+
+These are *qualified* relationships. Atlas followed the `use` statements and
+modules to find exactly which item each name refers to; it did not just match
+names. Calls are resolved only when the path or receiver is written clearly in
+the code. Calls Atlas cannot resolve are counted in the limits section and kept
+in the JSON. They are never treated as "no call".
+
+`--scope` selects which files to draw. Files with no arrows still appear, so
+you can see code that nothing else uses.
+
+## Which functions handle a type
+
+```sh
+atlas representations --type Tree --panel producers
+atlas representations --type Tree,Checked --panel contracts --backend pele
+atlas representations --query pipeline.json --panel all --backend pele
+```
+
+A *representation* is a type that carries data through your program. This view
+shows, for the types you choose, which functions take them, return them and
+build them. Choose the types with `--type`, or with a saved question
+(`--query`, described below).
+
+The view has several *panels*. Each shows a different side of the same types:
+
+- **`contracts`** (output heading `REPRESENTATION CONTRACTS`) lists the
+  selected functions, grouped by file, with the parameters and return values
+  that use a selected type. Without an `apis` list, Atlas selects the public
+  functions that *return* a selected type; a function that only takes one is
+  not shown. For example, `(Tree [tree]) -> (Checked [return · Ok])`
+  means the function takes a `Tree` in its parameter `tree` and returns a
+  `Checked` inside `Ok`. Error types defined in your workspace appear as `Err`
+  branches.
+- **`producers`** (output heading `OBSERVED RETURNERS / IMMEDIATE LITERAL
+  CONSTRUCTION`) lists, for each type, the functions that return it and the
+  places that build it directly (`Checked { ... }`). A function that only passes
+  a value along is not counted as building it.
+- **`preparation`** (output heading `PREPARATION RETURNERS / DIRECT PRODUCER
+  CALLS`) lists the functions in chosen files, next to the calls they
+  make that produce a selected type, in source order.
+- **`retention`** is a table of which selected types hold which others in
+  their fields. `&` marks a reference and `*` marks a type nested inside
+  another, such as `Vec<Tree>`.
+- **`all`** draws contracts, producers and preparation together.
+
+Two functions taking the same type does not mean they receive the same value
+at run time. This view shows how the code is written, not how data moves when
+it runs.
+
+### Saved questions
+
+A saved question is a JSON file that selects types and functions. It makes a
+diagram repeatable: you can commit it and draw the same view after every
+change.
 
 ```json
 {
-  "title": "From source model to rendered artifact",
+  "title": "From text to output",
   "types": [
-    { "name": "SourceGraph", "file": "crates/atlas-core/src/source/model.rs" },
-    { "name": "Diagram", "file": "crates/atlas-core/src/diagram/mod.rs" },
-    { "name": "Artifact", "file": "src/render/mod.rs" }
-  ],
-  "preparation_files": ["crates/atlas-core/src/diagram/projection.rs", "src/cli/map.rs"]
+    { "name": "Tree", "file": "src/parse.rs" },
+    { "name": "Checked", "file": "src/check.rs" }
+  ]
 }
 ```
 
-Optional `apis` selects exact function names and files. Otherwise written-public
-functions and trait implementation methods returning selected forms are used;
-this syntactic selection does not prove public reachability through reexports.
-Ambiguous names refuse. Methods use their written impl spelling, such as
-`Generator<'g>::candidates`. Query types and API roots select the figure; extra
-literal initializers outside their resolved reach are not erased.
+Optional fields:
 
-Panels have different visual grammars:
+- `apis`: exact functions to include, each as `{"name": ..., "file": ...}`.
+  Without it, Atlas includes public functions and trait methods that return a
+  selected type.
+- `preparation_files`: the files whose functions appear in the preparation
+  panel.
+- `preparation_functions`: exact functions for the preparation panel, each as
+  `{"name": ..., "file": ...}`. Each must match one function that returns a
+  selected type.
 
-- `contracts`: input/return type relationships, grouped by physical source file.
-  Resolved workspace error forms appear as `Err` branches even when not selected
-  as main forms; external/primitive errors may remain unresolved. Source titles
-  preserve signatures and observed literal sites. Same type does
-  not mean same runtime value.
-- `producers`: every observed returner and immediate literal constructor of each
-  selected type, in separate columns. A forwarding returner is not called a literal
-  constructor. A repeated route prompts reading; it is not a duplication verdict.
-- `preparation`: returners in selected files beside their source-ordered direct
-  producer calls. Repeated calls remain repeated observations.
-- `retention`: an optional sorted direct-field matrix. `&` marks references; `*`
-  marks nested type syntax. Complete expressions remain in titles/JSON:
-  `Arc<Graph>` does not establish ownership of Graph.
-- `all`: contracts, producers and preparation in one composite SVG.
+A name that matches more than one item is refused rather than guessed. Methods
+use the spelling of their `impl` block, such as `Generator<'g>::candidates`.
+[`examples/queries/atlas.json`](../examples/queries/atlas.json) is a larger
+saved question that describes Atlas itself.
 
-Select 1–12 types and at most 40 contracts/preparation rows per question. These
-projection limits apply to every backend, including JSON/ASCII; narrow the question
-when it exceeds them. Figures refuse without truncating source facts. Retention reserves two lines per cell; longer cell labels
-require a narrower question or ASCII.
+A question may select 1 to 12 types and at most 40 rows per panel. If a
+question selects more, Atlas refuses and asks you to narrow it, instead of
+cutting the diagram short.
 
-## Compare a change
+### Type aliases
+
+A type alias such as `type Forms = Vec<Form>` is shown with what it stands
+for. The alias stays the name used in signatures. Aliases are not expanded
+recursively.
+
+## What a function does
 
 ```sh
-atlas compare --before HEAD
-atlas compare --before OLD_COMMIT --after NEW_COMMIT --query question.json --backend pele
+atlas flow --path src/main.rs --function main
+atlas flow --path src/main.rs --function main --depth 1 --backend pele
+atlas flow --path src/main.rs --function main --detail control --backend pele
 ```
 
-The same selection is applied to both sources. Defaults compare the exact `before`
-commit with current working source; `--after` reads another exact revision. Git
-objects are read into an owned temporary tree and removed afterward. Atlas neither
-checks out nor snapshots the user's working copy. No fetch happens.
+`flow` shows the steps inside one function in the order they are written:
+each expression, every branch of an `if` or `match` (including guards), loops,
+early `return`s and every `?` that may return early.
 
-Keys use physical file and qualified source symbol, excluding line-number churn.
-The Pele comparison aligns before/after values, names both revisions, and labels
-added/removed/changed observations. Several rows can describe the same source edit;
-unchanged observations are omitted. It shows types, contract positions, field syntax,
-literal-site counts and direct producer-call sequences. Removed types remain visible.
-Moves/renames are reported as removal/addition; ambiguous identities refuse. Pele
-refuses more than 40 changes; narrow the query or use ASCII/JSON. The current reader
-requires a repository-root Cargo workspace; subdirectory workspaces and external
-path dependencies in a historical snapshot may refuse. Git submodule contents are
-not materialized. No semantic equivalence or rename inference is claimed.
+```text
+-> check(parse(&text)) [src/main.rs:6]
+-> match check(parse(&text)) [src/main.rs:6]
+   | pattern Ok(program)
+    -> println!("{}", emit(&program)) [opaque] [src/main.rs:7]
+   | pattern Err(message)
+    -> eprintln!("error: {message}") [opaque] [src/main.rs:8]
+```
 
-## Overview from declared stages
+Some steps are *opaque*: Atlas knows they are there but does not look inside.
+Macro calls, closures, `async`, `try` and `unsafe` blocks, labelled blocks and
+syntax Atlas does not support are opaque. Atlas does not guess what they do.
+
+**Expanding calls.** By default `flow` shows one function body. With
+`--depth 1` (up to 6), it also opens the functions that body calls, when it can
+resolve them, and shows where each call returns. Recursion, the depth limit and
+calls it cannot resolve are marked as boundaries. A diagram with more than 600
+steps is refused; choose a smaller function or depth.
+
+**Less detail.** `--detail control` hides small borrow steps (`&text`) and the
+extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The
+hidden steps are still listed in the JSON evidence.
+
+`flow` shows what the code's structure allows. It does not prove that a branch
+can actually be taken, that a loop ends, or what a panic, destructor or
+operator overload does. The test file
+[`tests/source_control.rs`](../tests/source_control.rs) shows each construct
+`flow` supports.
+
+## How a change affected a type
+
+```sh
+atlas compare --before HEAD~1 --query pipeline.json
+atlas compare --before v1.0.0 --after v1.1.0 --query pipeline.json --backend pele
+```
+
+`compare` applies the same saved question to two versions of the code and
+lists what changed: types, function signatures, fields, the number of places a
+type is built, and the order of calls in preparation functions. By default it
+compares a commit (`--before`) with your current files; add `--after` to
+compare two commits.
+
+For example, after adding a `length` field to `Checked`:
+
+```text
+[type] src/check.rs::Checked
+  before: tree: Tree
+  after: tree: Tree
+    length: usize
+```
+
+Items are matched by file and name, not line number, so moving code within a
+file does not show up as a change. A renamed or moved item appears as one
+removal and one addition. The image backend refuses more than 40 changes;
+narrow the question, or use the text or JSON output.
+
+Atlas reads the old commit into a temporary directory and deletes it
+afterwards. It does not check out commits, fetch, or touch your working files.
+The Cargo workspace must be at the repository root, and Git submodules are not
+read.
+
+## An overview from declared stages
 
 ```sh
 atlas overview --adapter path/to/adapter --backend pele
 atlas overview --adapter path/to/adapter --declarations src/stages.rs --json
 ```
 
-`overview` draws the representation contracts between the stages a project
-declares in its own source, for example a literal `const PIPELINE` table. A
-**declaration adapter**, a small executable you build against the `atlas`
-library, interprets that table. Atlas gives the adapter the constant's syntax and
-the module mounts from its own parse; the adapter does not reparse or compile the
-project. Atlas then checks the reply against the source snapshot before drawing
-anything. Computed declarations are refused. See
-[extending Atlas](extensions.md) for the protocol and
-[`examples/pipeline-adapter.rs`](../examples/pipeline-adapter.rs) for a complete
-adapter.
+Some projects describe their own structure in code, for example with a
+`const PIPELINE` table listing each stage and its entry function. `overview`
+draws that structure: which types each stage hands to the next.
 
-The main forms are the successful output types of each stage's entry function.
-Public methods join the picture when they produce a form that another stage
-accepts, or construct an entry type. Unexpected literal constructors outside the
-entry functions' resolved reach stay visible. Instrument modules get a separate
-panel of their observed direct calls. Declared dependencies never become observed
-edges, and they never hide unexpected relationships. This is a contract view, not
-an execution order.
+Atlas does not know your table's format, so you supply a small program called
+a *declaration adapter* that reads it. Atlas parses the table and passes it to
+the adapter; the adapter says what each row means; Atlas checks the answer
+against the source and draws the diagram. Tables computed at run time are
+refused. See [extending Atlas](extensions.md) to write an adapter.
 
-## Navigation and source-body views
+In the diagram, the main types are what each stage's entry function returns
+on success. Public functions also appear when they produce a type another
+stage takes. Modules marked as instruments (such as logging or measurement
+code) get a separate panel. Your declarations decide what counts as a stage,
+but they never add or hide observed relationships.
 
-```sh
-atlas census --json
-atlas name Plan
-atlas module src/backend
-atlas name Plan --relations --json
-atlas flow --path src/lib.rs --function compile_with --depth 1 --backend pele --format svg
-```
+## Older views: map and program
 
-`flow` reads a selected function's expression control: operand evaluation, branches,
-match patterns and guards, loops, explicit returns and each residual `?`. With
-`--depth 1` (up to 6), it expands source-resolved callees and pairs each call
-occurrence with its own return continuation. Physical source files enclose nodes;
-repeated calls never share a return vertex. Recursion, depth limits and unresolved
-calls are labelled boundaries that continue only if they return. Expansion refuses
-above 600 nodes without emitting a partial picture; select a smaller entry or depth.
-Without `--depth`, it shows one source body without resolving callees.
+`map` and `program` are older views.
 
-This remains a source-control picture, not feasibility analysis or a proof of
-termination. Panics/unwinding, destructors, implicit operator dispatch and macro
-execution are not inferred. Closures, async/try/unsafe blocks, labelled blocks and
-unsupported syntax stay opaque; they are not flattened into ordinary work.
-Compound assignment order depends on types, so it also stays opaque. Call/return
-edges describe the supported ordinary-return path. The executable cases in
-`tests/source_control.rs` show each construct.
+- `map --architecture PROFILE` and `program --architecture PROFILE` draw the
+  groups and permissions declared in an *architecture profile*: an older JSON
+  format, separate from the [policy file](checks.md), described by the types in
+  the `atlas::architecture` module. They show what you declared, not what the
+  code does. For new projects, use a policy and `delta` instead.
+- `map --view types`, `name --relations` and `dump` show relationships found by
+  matching names (*lexical* evidence). They are approximate. For exact
+  relationships, use `dependencies`.
 
-`program --architecture PROFILE` and
-`map --architecture PROFILE` remain available for existing callers. Their profiles
-are declared boundaries/permissions, not observed program behavior.
+## Limits
 
-`name --relations` adds approximate incoming/outgoing lexical evidence to a name
-card. The old `related` spelling is a hidden compatibility alias and warns on stderr;
-its JSON contract is unchanged. `dump` retains the complete lexical source model for
-library and machine consumers. `map` retains declared-boundary/quotient views, which
-are different questions from qualified direct file relationships.
-
-The older `map --view types`, `name --relations` and `dump` relationships are explicitly
-approximate lexical co-mentions. Use `dependencies` for qualified calls/signature/
-field relationships. This distinction is deliberate; legacy evidence is not silently
-upgraded into a semantic claim. Saved profiles are optional legacy inputs, never
-required for the source-declaration overview.
-
-## What qualified facts cover
-
-The shared source facts cover written production structs/enums, signatures, direct
-fields, immediate struct literals and conservative resolved calls. Exact source
-expressions preserve containers, references and tuple positions. Macro expansion,
-trait/alias normalization, Default/Clone construction, indirect state and dynamic
-dispatch are not complete. Deferred literal construction is excluded. Conditional
-alternatives remain alternatives. Unknown type spellings include primitives and
-external types as well as unavailable resolution. Name resolution needs unambiguous
-Cargo mounts; unusual module-declaration formatting may exceed the lexical discovery
-scanner. None of these unknowns is a proved missing edge.
-
-The `atlas` library exposes the same models: representation facts and
-projections, qualified dependencies, declaration adapters, comparisons, diagram
-models and the ASCII and Pele renderers. Renderers never reopen source. See the
-[library guide](library.md).
-
-## Named aliases and control detail
-
-Representation queries include named Rust aliases such as `type Forms = Vec<Form>`.
-Their written RHS is shown explicitly; the alias stays the signature's handoff.
-RHS references are `alias-target` observations, never fields or ownership claims.
-They are not recursively expanded. External/ambiguous RHS names remain unknown;
-cycles remain finite written links. Comparison reports RHS changes.
-
-For an entry sequence without separate borrow and synthetic `?` bridge boxes:
-
-```sh
-atlas flow --root . --path src/main.rs --function main --detail control --backend pele --format svg --out target/atlas/main.svg
-```
-
-`--detail expressions` is the default. Control detail contracts only designated
-borrow/bridge nodes with one incoming and one outgoing edge. A residual decision
-can join an unexpanded call with one continuation in the same file. Branches,
-loops, guards, opaque operations, exits and occurrence-specific call returns remain.
-Control detail refuses over 600 raw source-control nodes before folding, also at
-depth zero. The original unexpanded expression detail keeps its existing limit.
-Folded node labels and witnesses are retained in `coverage.summarized_nodes` in
-`diagram.json`; `workflow.json` retains the original selected workflow steps.
-Source-control possibilities are not path feasibility or a termination proof.
-
-The Pele preparation panel groups functions by file and connects actual resolved
-producer calls to one box per function identity. Two callers sharing a callee are
-visible as two routes to that implementation, not a claim of one runtime value.
-Locations witness call sites without asserting an evaluation order.
-ASCII retains the corresponding comparable preparation rows.
-
-Use `preparation_functions` in a saved query for an exact overview, for example
-`[{"name":"lower","file":"src/frontend/lower.rs"},
-{"name":"build","file":"src/frontend/program.rs"}]`.
-Each selector must resolve uniquely and return a selected representation.
-`preparation_files`, when also present, limits those selections to those files.
-Omit function selection to retain all producer-returning rows in the chosen files.
-All source facts remain in JSON; the query selects a view, not an asserted architecture.
-
-## Renderer resource boundaries
-
-Each embedded Pele invocation accepts at most 16 MiB of serialized JSON request
-(including the bundled renderer), 32 MiB of SVG stdout and 64 KiB of diagnostic
-stderr. Escaped JSON bytes count toward the request limit; serialization refuses
-before starting Node when it exceeds the cap. A composed figure can contain more
-than one independently bounded panel. The pinned renderer also retains its own
-50,000-character diagram-source limit; the host I/O caps do not raise it.
-
-The host concurrently writes the request and reads both output streams. Overflow
-refuses instead of truncating success, and an I/O failure stops and reaps the
-owned child. Startup diagnostics and the observed exit status survive a failed
-request write. An otherwise successful child cannot supply an artifact after
-incomplete input delivery. Non-UTF-8 output or output without an SVG root/closing
-tag refuses; this protocol check is not a complete XML validator.
-
-These are byte/resource boundaries, not a total execution-time or CPU budget.
-Invoked processes must close their pipes and must not leave descendants retaining
-them. Atlas owns the direct child; it does not manage a process tree. The embedded
-bundle creates no child processes. Existing destination protection still applies
-before publication. Native view failures publish no completed artifact; the map/
-flow route retains captured source/diagram evidence and Mermaid after a failed
-render, with an unsuccessful exit and no finished SVG/HTML.
+- Diagrams show how code is written, not what happens when it runs.
+- Macros are not expanded, types are not inferred and trait calls are not
+  resolved. The [concepts guide](concepts.md#limits) lists all the limits.
+- The image renderer accepts at most 16 MiB of input and produces at most
+  32 MiB of output. A request larger than that is refused before Node.js
+  starts, and output that is too large is refused rather than cut short.
+- If drawing fails, Atlas does not leave a partial image. `flow` and `map`
+  still save their JSON evidence and Mermaid file, and the command exits with
+  an error.

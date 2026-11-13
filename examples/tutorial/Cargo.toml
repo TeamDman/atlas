@@ -1,0 +1,9 @@
+# A tiny project for trying Atlas. See docs/getting-started.md.
+[package]
+name = "tutorial"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Its own workspace, so Cargo does not treat it as part of Atlas.
+[workspace]
