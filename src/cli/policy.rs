@@ -11,9 +11,6 @@ use std::{
     path::{Path, PathBuf},
 };
 #[derive(Args)]
-#[command(
-    after_help = "Question: are policy inputs valid against captured source and required observations? This does not adjudicate measured architecture or a landing delta. Population: native source-tree files, with each rule's production/test selection. Missing helpers or project authority are unavailable, never PASS. Example: atlas policy --root . --policy .config/architecture.toml --json"
-)]
 pub(crate) struct Options {
     /// Native schema-1 authored policy, relative to the workspace or absolute.
     #[arg(long)]

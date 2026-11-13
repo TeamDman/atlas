@@ -18,9 +18,6 @@ use std::{
 mod presentation;
 
 #[derive(Args)]
-#[command(
-    after_help = "Question: what architecture debt does this pinned candidate add relative to the baseline? Source must match the materialized candidate; this query never snapshots working edits. Policies using stage_seams or project-owned references require a project wrapper; this CLI reports those inputs as UNAVAILABLE. JSON REFUSE is data (exit 0); consumers must admit the verdict. Unavailable evidence exits unsuccessfully. Example: atlas delta HEAD~1 --candidate HEAD --policy .config/architecture.toml --citation-markers docs/design/,spec/ --json"
-)]
 pub(crate) struct Options {
     /// Published revision whose policy and source form the baseline.
     reference: String,

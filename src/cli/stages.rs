@@ -17,9 +17,6 @@ use std::{
 };
 
 #[derive(Args)]
-#[command(
-    after_help = "Population: selected packages' native source trees; production stage paths and, for seams, test and mounted code. Evidence: textual paths, not execution or complete policy PASS. Project authority requires the owning project's wrapper. Example: atlas stages --root . --policy .config/architecture.toml --json"
-)]
 pub(crate) struct Options {
     /// Select a declared Cargo package; defaults to all applicable policy rows.
     scope: Option<String>,
