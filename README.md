@@ -1,56 +1,111 @@
 # Atlas
 
-Atlas helps you understand a Rust codebase. It reads the source code of a Cargo
-project and answers questions about how the code is put together:
+Atlas answers questions about how your Rust codebase is put together, and it
+can stop a change that breaks the structure you agreed on.
 
-- Where is this type or function defined, and what uses it?
-- What changed between two commits?
-- Which files call into which other files?
-- What paths can this function take?
-- Does the code still follow the structure we agreed on?
+You point it at a Cargo project and ask, from your terminal, a script or CI:
 
-Atlas is a command-line tool and a Rust library. It only reads your code: it
-never edits it, compiles it or runs it. Every answer points back to the file
-and line it came from, so you can check it yourself.
+- Where is this type defined, and how much of the code depends on it?
+- I just refactored a lot of files. What actually changed?
+- Which files call into which?
+- Does this change break our architecture rules?
+
+Atlas only reads your code. It never edits, compiles or runs it, and every
+answer points to the file and line it came from, so you can check it yourself.
+
+## What it looks like
+
+### Find a type, and see how much depends on it
+
+Here is Atlas looking at its own source:
 
 ```console
-$ atlas name check
-check: 2 declaration sites (ambiguous)
+$ atlas name Snapshot
+Snapshot: 4 declaration sites (ambiguous)
 
-src/check.rs:10:check [Pub Fn]
-  Check a parsed tree.
-  2 outgoing, 0 incoming candidate-unique, 0 incoming ambiguous
-  pub fn check(tree: Tree) -> Result<Checked, String> {
+crates/atlas-core/src/source/discovery/mod.rs:38:Snapshot [Pub Struct]
+  Source bytes and their derived lexical graph from one discovery pass.
+  4 outgoing, 42 incoming candidate-unique, 0 incoming ambiguous
+  pub struct Snapshot {
 
-src/lib.rs:2:check [Pub Mod]
-  0 outgoing, 0 incoming candidate-unique, 0 incoming ambiguous
-  pub mod check;
+src/adapter/snapshot.rs:23:Snapshot [Pub Struct]
+  2 outgoing, 3 incoming candidate-unique, 0 incoming ambiguous
+  pub struct Snapshot {
+
+(and the two `impl Snapshot` blocks)
 ```
 
-Here the name `check` belongs to both a function and a module. Atlas shows
-both and says the name is ambiguous, instead of guessing which one you meant.
+There are two different types named `Snapshot`. About 42 places refer to the
+first and 3 to the second, so you know which one a change would ripple
+through. When a name could mean more than one thing, Atlas shows you every
+match. It never picks one for you.
 
-## Why use Atlas?
+### See what a big change really did
 
-Your editor (with rust-analyzer) is the best tool for working on one piece of
-code at a time. Atlas is for questions about the whole project at once, asked
-from a terminal, a script, a code review or a CI job.
+You moved code across files and renamed things. The text diff shows hundreds
+of changed lines. Atlas compares every function and type body with the earlier
+commit and sorts them:
 
-- **Find your way around.** Count what a project contains, look up any name,
-  and list what a module holds.
-- **Review changes.** See which files grew, which functions changed or moved,
-  and which items became more or less public.
-- **Draw diagrams.** Show how files depend on each other, which functions
-  produce and consume a type, and how a function branches. The output is text,
-  or an SVG image.
-- **Check structure.** Write down rules, such as "the parser must not use the
-  code generator" or "this crate stays under 2,000 lines", and have Atlas
-  check every change against them.
+```console
+$ atlas moved HEAD~4
+Token bodies against d3e4e42d4a95…: 1186 exact; 0 rerooted; 10 changed; 0 only before; 0 only after
+changed: atlas method Comparison::text · src/views/comparison.rs:271
+changed: atlas-core item header_counts · crates/atlas-core/src/checks/concentration/ratchets.rs:559
+...
+```
 
-Atlas is careful about what it knows. When a name could mean two things, it
-shows both. When it cannot work out what a call refers to, it says so, rather
-than leaving the call out. A missing answer is reported as missing, never as
-"nothing found".
+Out of 1,196 items, 1,186 are identical apart from where they live or how
+they're formatted. You only need to review the 10 that changed.
+
+### See which files depend on which
+
+```console
+$ atlas dependencies --relation calls
+RELATIONSHIPS
+  [main.rs] --calls: main calls check (1 sites)--> [check.rs]
+  [main.rs] --calls: main calls parse (1 sites)--> [parse.rs]
+```
+
+Add `--backend pele` to draw the same thing as an SVG image. Atlas can also
+draw which functions produce and consume a type, and every path a function can
+take. See [diagrams](docs/diagrams.md).
+
+### Catch a change that breaks your rules
+
+You write your project's rules in a small TOML file. For example: "the code
+that writes output may use the checker, but not the parser". Then Atlas checks
+each change against those rules. Here someone made the output code use the
+parser directly:
+
+```console
+$ atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
+atlas delta dbb03fd281f2 -> 7e0ff3f307aa · 427ms
+size      +4 core token-lines · 45/200 · 9.8 tokens/line
+...
+surface   +1 public declarations · tutorial 11/20
+verdict   REFUSE
+refusal   stage interface `tutorial`: src/emit.rs:3 emit reads parse (`crate::parse::Tree`),
+          which its stage_reads row does not list; read it through the stage's input, or add
+          `parse` to the row's reads with the reason in a comment
+```
+
+The refusal names the exact line and gives you two ways to fix it. In CI this
+fails the build, so the rule holds without anyone having to remember it.
+[Architecture checks](docs/checks.md) explains how to write rules, including
+what `--citation-markers` is for.
+
+## Is it for you?
+
+Use your editor and rust-analyzer when you're working on one piece of code.
+Reach for Atlas when your question is about the whole project, or when you want
+the answer in a script, a review or a CI job:
+
+- You're new to a codebase and want a map of it.
+- You're reviewing a large refactor and want to know what really changed.
+- You want structural rules ("this crate stays under 2,000 lines", "the parser
+  never uses the code generator") checked automatically instead of in review.
+- You're building your own tooling and want a Rust library that reads a
+  workspace for you. See [using the library](docs/library.md).
 
 ## Install
 
@@ -58,24 +113,29 @@ You need Rust 1.99.1 or newer.
 
 ```sh
 cargo install --locked --git https://github.com/flowerornament/atlas.git atlas
+atlas --version    # should print "atlas 0.9.0" or later
 ```
+
+If `atlas --version` prints something else, a different program called
+`atlas` comes first on your `PATH`. For example, Nim's package manager has the
+same name. Run `~/.cargo/bin/atlas` instead, or put `~/.cargo/bin` earlier in
+your `PATH`.
 
 Some features need more tools:
 
-- **SVG diagrams** need Node.js 20 or newer. The drawing code is built into
-  Atlas, so there is nothing else to install.
-- **Comparing commits** needs Git and `tar`. In a
-  [jj](https://github.com/jj-vcs/jj) repository, Atlas also needs `jj`, and
-  reads the Git store behind it.
+- **SVG diagrams** need Node.js 20 or newer. You don't install anything else;
+  the drawing code is built into Atlas.
+- **Comparing commits** needs Git and `tar`. If your project uses
+  [jj](https://github.com/jj-vcs/jj), Atlas also needs `jj`, and you name
+  commits the jj way (`@-` instead of `HEAD~1`).
 
 To get the same Atlas every time, for example in CI, add `--rev <commit>` to
 the install command.
 
-## Try it
+## Try it in five minutes
 
-This repository includes a tiny example project in
-[`examples/tutorial`](examples/tutorial). [Getting started](docs/getting-started.md)
-walks through it step by step. In short:
+This repository includes a tiny project to practise on. The `dependencies`
+and `delta` examples above come from it.
 
 ```sh
 git clone https://github.com/flowerornament/atlas.git
@@ -85,18 +145,34 @@ cd /tmp/tutorial
 atlas census                 # what does this project contain?
 atlas name Tree              # where is Tree defined, and what uses it?
 atlas module src/check.rs    # what is in this file?
-atlas flow --path src/main.rs --function main     # what can main do?
 atlas dependencies --relation calls               # which files call which?
+atlas flow --path src/main.rs --function main     # what paths can main take?
 ```
 
-Inside your own project, run the same commands from the project's root
-directory, or point Atlas at it with `--root path/to/project`. Add `--json` to
-any command to get machine-readable output, and run `atlas <command> --help` to
-learn exactly what a command counts.
+[Getting started](docs/getting-started.md) walks you through it step by step,
+ending with the rule check shown above.
+
+On your own project, run the same commands from its root directory, or pass
+`--root path/to/project`. Add `--json` to any command for machine-readable
+output, and run `atlas <command> --help` to see what a command counts.
+
+## What Atlas can't see
+
+Atlas reads code the way a careful person would, without the compiler. So it
+doesn't:
+
+- expand macros (a macro call shows up as one step it doesn't look inside),
+- decide which `#[cfg(...)]` options are active,
+- work out types the code doesn't write down,
+- decide which trait implementation a call uses at run time,
+- prove that a path through a function can actually happen.
+
+When it can't work something out, it tells you instead of leaving it out. A
+missing answer is reported as unknown, never as "nothing found".
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md): a guided tour using the example project
+- [Getting started](docs/getting-started.md): a guided tour of the example project
 - [How Atlas works](docs/concepts.md): the ideas behind every command, and a glossary
 - [Diagrams](docs/diagrams.md): each kind of diagram and how to read it
 - [Architecture checks](docs/checks.md): writing rules for your project and checking them
@@ -104,19 +180,6 @@ learn exactly what a command counts.
 - [Extending Atlas](docs/extensions.md): teaching Atlas your project's conventions
 - [Contributing](CONTRIBUTING.md), [code architecture](ARCHITECTURE.md) and the
   [changelog](CHANGELOG.md)
-
-## What Atlas does not do
-
-Atlas reads source code the way a careful person would, without running the
-compiler. That means it does not:
-
-- expand macros (a macro call is shown as one opaque step),
-- decide which `#[cfg(...)]` options are active,
-- work out types that the code does not write down,
-- decide which trait implementation a call will use at run time,
-- prove that a path through a function can actually happen.
-
-When one of these limits affects an answer, the output says so.
 
 ## License
 
