@@ -579,12 +579,12 @@ fn header_counts(
         };
         if published.is_some() && !fresh.is_empty() {
             out.refusals.push(format!(
-                "`{name}` has new folder roots whose //! header cites no formal-model section or .design spec ({}); a new folder root cites the section or spec it realizes, whatever the count",
+                "`{name}` has new folder roots whose //! header has no citation ({}); a new folder root cites the document it realizes, whatever the count",
                 fresh.join(", ")
             ));
         } else if count > held {
             out.refusals.push(format!(
-                "`{name}` has {count} folder roots whose //! header cites no formal-model section or .design spec, above {held}; cite the section or spec each realizes in its header ({})",
+                "`{name}` has {count} folder roots whose //! header has no citation, above {held}; cite the document each realizes in its header, or raise header_uncited ({})",
                 shown.join(", ")
             ));
         } else if count < held {

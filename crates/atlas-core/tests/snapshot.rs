@@ -195,7 +195,7 @@ fn documentation_uses_supplied_citations_and_explicit_test_population() {
     let production = documentation::audit(&snapshot, ".", &policy).unwrap();
     assert_eq!(production.checked_items, 2);
     assert_eq!(production.findings.len(), 1);
-    let other_markers = ["FM-"];
+    let other_markers = ["SPEC-"];
     policy.citation_markers = Some(&other_markers);
     assert!(
         documentation::audit(&snapshot, ".", &policy)

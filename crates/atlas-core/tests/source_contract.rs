@@ -3,10 +3,10 @@ use std::path::Path;
 
 #[test]
 fn native_evidence_surfaces_exclude_fake_annotations_and_preserve_attachment() {
-    let source = "const FAKE: &str = r#\"\n// fm:fake\n\"#;\n\n// fm:claim\n#[doc = \"item\"]\npub fn actual() {}\n";
+    let source = "const FAKE: &str = r#\"\n// spec:fake\n\"#;\n\n// spec:claim\n#[doc = \"item\"]\npub fn actual() {}\n";
     let projection = RustSourceProjection::of(source.into());
     let comments: Vec<_> = projection.line_comment_lines().collect();
-    assert_eq!(comments, vec![(5, "// fm:claim")]);
+    assert_eq!(comments, vec![(5, "// spec:claim")]);
     assert!(!projection.starts_in_code(1));
     let item = projection
         .outline(Path::new("lib.rs"))

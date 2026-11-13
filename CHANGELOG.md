@@ -6,8 +6,8 @@ depend on an exact Git revision.
 
 ## atlas 0.9.0
 
-- **Breaking:** the project-specific `atlas-girard` executable is no longer part
- of this package, and `atlas overview` now requires `--adapter PATH`. Projects
+- **Breaking:** the project-specific overview adapter that earlier versions installed
+ beside `atlas` is no longer part of this package, and `atlas overview` now requires `--adapter PATH`. Projects
  keep their declaration adapter in their own repository; see
  [`examples/pipeline-adapter.rs`](examples/pipeline-adapter.rs).
 - The example adapter is renamed from `foreign-adapter` to `pipeline-adapter`

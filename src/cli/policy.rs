@@ -83,6 +83,6 @@ pub(crate) fn run(
     match status {
         Status::Pass => Ok(()),
         Status::Refuse => Err("policy refused; see source findings".into()),
-        Status::Unavailable => Err("policy required inputs unavailable; resolve helpers and use the native wrapper for project authority".into()),
+        Status::Unavailable => Err("policy required inputs unavailable; resolve helpers and use a project wrapper for project-specific authority".into()),
     }
 }

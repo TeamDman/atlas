@@ -356,7 +356,7 @@ pub struct Reference {
     pub written: String,
 }
 impl Policy {
-    /// The native wrapper must resolve these; parsing them never grants authority.
+    /// The project wrapper must resolve these; parsing them never grants authority.
     pub fn external_references(&self) -> Vec<Reference> {
         let mut out = Vec::new();
         let mut add = |field: Vec<String>, written: &str| {

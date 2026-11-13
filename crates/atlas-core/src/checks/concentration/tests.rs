@@ -564,7 +564,7 @@ fn the_section_cannot_loosen_itself_without_a_named_ruling() {
     let extra = landing(&loosened, Some(&published), &tree, &tree, cited).violations;
     assert_eq!(extra.len(), 1, "{extra:?}");
     assert!(extra[0].contains("covers `population`, which this landing does not loosen"));
-    // Malformed bead syntax remains the native wrapper's parser assertion.
+    // Malformed citation syntax is the project wrapper's parser assertion.
     // Tightening needs no ruling.
     let tighter = section(
         "population = ['fix', 'gone', 'more']\nentry_lines = 2\nfile_lines = 4\nconventional_names = []",
@@ -673,7 +673,9 @@ fn a_listed_path_never_grows_past_its_base() {
         land(&held, Some(&held), &cited, &uncited)
             .violations
             .iter()
-            .any(|refusal| refusal.contains("has new folder roots whose //! header cites no"))
+            .any(
+                |refusal| refusal.contains("has new folder roots whose //! header has no citation")
+            )
     );
 }
 
@@ -985,7 +987,11 @@ fn a_new_folder_root_must_cite() {
     ]);
     let refused = land(&held, Some(&held), &base, &swapped).violations;
     assert_eq!(refused.len(), 1, "{refused:?}");
-    assert!(refused[0].contains("has new folder roots whose //! header cites no formal-model section or .design spec (crates/fix/src/b.rs)"));
+    assert!(
+        refused[0].contains(
+            "has new folder roots whose //! header has no citation (crates/fix/src/b.rs)"
+        )
+    );
 }
 
 // A production `#[path]` hides a module from the scan; test-only and
@@ -1050,7 +1056,7 @@ fn an_uncited_folder_root_counts_and_the_count_only_goes_down() {
     let tree = workspace(&[("lib.rs", "//! Fixture.\nmod a;\n"), ("a.rs", "")]);
     let refused = refusals(&policy(""), None, &tree);
     assert!(
-        refused[0].contains("1 folder roots whose //! header cites no"),
+        refused[0].contains("1 folder roots whose //! header has no citation"),
         "{refused:?}"
     );
     let held = policy("[header_uncited]\nfix = 1");

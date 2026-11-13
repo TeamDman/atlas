@@ -32,7 +32,7 @@ impl Revision {
         let root = self.path().canonicalize()?;
         Ok(std::fs::read(crate::architecture::bind_path(&root, path)?)?)
     }
-    /// Requires Git/tar. JJ desks resolve their actual Git store through `jj git root`.
+    /// Requires Git/tar. jj workspaces resolve their actual Git store through `jj git root`.
     pub fn read(root: &Path, revision: &str) -> Result<Self> {
         GitStore::discover(root)?.revision(revision)
     }

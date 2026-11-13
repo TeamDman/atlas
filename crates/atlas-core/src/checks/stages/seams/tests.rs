@@ -41,8 +41,8 @@ fn crate_map(files: &[(&str, String)]) -> CrateMap {
     Workspace::of(&snapshot(files)).unwrap().crates.remove(0)
 }
 
-// A fixture wrapper supplies interpreted names. Real project FM interpretation
-// and citation tests stay native, outside this generic mechanism.
+// A fixture wrapper supplies interpreted names. Real project interpretation
+// and citation tests belong to project wrappers, outside this generic mechanism.
 fn declarations(map: &CrateMap) -> BTreeMap<String, BoundaryDeclaration> {
     map.files
         .iter()
@@ -107,9 +107,9 @@ const SEAMS: &str = r#"
     test_coupling = { back = { pairs = 1, owner = "issue-29" } }
 "#;
 
-const FRONT_HEADER: &str = "//! Front.\n//!\n//! Boundary (`fm/core.md` §Definition: core terms): `Presentation`,\n//! `Certified`.\n";
+const FRONT_HEADER: &str = "//! Front.\n//!\n//! Boundary (`spec/core.md` §Definition: core terms): `Presentation`,\n//! `Certified`.\n";
 const FRONT_BODY: &str = "pub(crate) mod check;\nmod work;\npub(crate) use check::Certified;\npub(crate) struct Presentation;\n";
-const MIDDLE: &str = "//! Boundary (FM-1-2): `Graph`.\nuse crate::front::Presentation;\nuse crate::front::check::Certified;\nuse crate::vocabulary::Name;\nuse crate::front::work;\npub(crate) struct Graph;\nfn lower() { work::interior(); }\n";
+const MIDDLE: &str = "//! Boundary (SPEC-1-2): `Graph`.\nuse crate::front::Presentation;\nuse crate::front::check::Certified;\nuse crate::vocabulary::Name;\nuse crate::front::work;\npub(crate) struct Graph;\nfn lower() { work::interior(); }\n";
 const BACK: &str =
     "use crate::middle::Graph;\nuse crate::front::work::interior;\n#[cfg(test)]\nmod tests;\n";
 const BACK_TESTS: &str = "use crate::middle::Graph;\nuse crate::front::check::helper;\n";

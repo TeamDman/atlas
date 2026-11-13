@@ -44,7 +44,7 @@ impl SeamReading {
             .iter()
             .map(|UnownedRead { reader, read, item, site }| {
                 format!(
-                    "stage seam `{name}`: {}:{} {reader} reads `{item}` (`{}`) inside its input {read}, past {read}'s boundary; read a boundary item, or list `{item}` in {read}'s //! Boundary paragraph if it is part of the FM object",
+                    "stage seam `{name}`: {}:{} {reader} reads `{item}` (`{}`) inside its input {read}, past {read}'s boundary; read a boundary item, or list `{item}` in {read}'s //! Boundary paragraph if it is part of the documented interface",
                     site.file, site.line, site.path
                 )
             })
@@ -140,7 +140,7 @@ impl SeamReading {
             let held = self.held.exports.get(stage).map_or(0, |row| row.items);
             if boundary.unlisted.len() > held {
                 refusals.push(format!(
-                    "stage boundary `{name}`: {stage}'s root exports {} items its //! Boundary paragraph does not list, above the recorded {held}; list an FM object (with its citation) or make the export private",
+                    "stage boundary `{name}`: {stage}'s root exports {} items its //! Boundary paragraph does not list, above the recorded {held}; list it (with its citation) or make the export private",
                     boundary.unlisted.len()
                 ));
             }
@@ -156,7 +156,7 @@ impl SeamReading {
                     .filter(|(item, _)| !based.exported.contains(*item))
                 {
                     refusals.push(format!(
-                        "stage boundary `{name}`: {file}:{line} {stage}'s root newly exports `{item}`, which its //! Boundary paragraph does not list; an export enters the boundary only with its FM citation in that list"
+                        "stage boundary `{name}`: {file}:{line} {stage}'s root newly exports `{item}`, which its //! Boundary paragraph does not list; an export enters the boundary only when that list names it with a citation"
                     ));
                 }
             }

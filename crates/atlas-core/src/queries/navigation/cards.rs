@@ -1,4 +1,4 @@
-//! Definition, binding and module cards; project FM enrichment remains caller-owned.
+//! Definition, binding and module cards; project-specific enrichment remains caller-owned.
 use super::{Basis, Navigation, Tally, census_kind};
 use crate::{
     Result,
