@@ -6,6 +6,10 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `diff` no longer lists a file whose text changed but whose measured shape
+ did not (same non-test lines, top-level items and largest block): it counts
+ them in one line. The JSON keeps every changed file and marks each with
+ `shape_changed`.
 - `flow` draws a statement under `#[cfg(...)]`, or under a `cfg_attr` that adds
  one, as a branch named by the attribute as written: its steps on one arm,
  nothing on the other. The predicate is not evaluated.

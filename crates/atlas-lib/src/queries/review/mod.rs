@@ -147,6 +147,21 @@ pub struct ShapeChange {
     pub file: String,
     pub before: Option<Shape>,
     pub after: Option<Shape>,
+    /// False when the production text changed but every measure is the same:
+    /// non-test lines, top-level items and the largest block's name and size.
+    pub shape_changed: bool,
+}
+impl Shape {
+    fn same_measure(&self, other: &Self) -> bool {
+        let block = |shape: &Self| {
+            shape
+                .largest_block
+                .as_ref()
+                .map(|block| (block.name.clone(), block.lines))
+        };
+        (self.non_test_lines, self.top_level_items) == (other.non_test_lines, other.top_level_items)
+            && block(self) == block(other)
+    }
 }
 #[derive(Debug, Serialize)]
 #[non_exhaustive]
@@ -243,10 +258,15 @@ pub fn diff(before: &Snapshot, after: &Snapshot, scope: &str) -> Result<ShapeDif
                 (None, None) => true,
                 _ => false,
             };
+            let shape_changed = match (&left, &right) {
+                (Some(before), Some(after)) => !before.same_measure(after),
+                _ => true,
+            };
             (!unchanged).then_some(ShapeChange {
                 file,
                 before: left,
                 after: right,
+                shape_changed,
             })
         })
         .collect();

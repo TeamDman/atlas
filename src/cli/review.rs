@@ -57,7 +57,8 @@ pub(crate) fn run(
                 print_json(&commit, question, &report)?;
             } else {
                 println!("Module shape against {commit} (current source)");
-                for change in &report.changes {
+                let content_only = report.changes.iter().filter(|c| !c.shape_changed).count();
+                for change in report.changes.iter().filter(|c| c.shape_changed) {
                     println!("{}", change.file);
                     for (side, shape) in [("before", &change.before), ("after", &change.after)] {
                         if let Some(shape) = shape {
@@ -71,6 +72,13 @@ pub(crate) fn run(
                             println!("  {side}: absent");
                         }
                     }
+                }
+                if content_only > 0 {
+                    println!(
+                        "{content_only} more {} changed text with the same shape; --json lists {}",
+                        if content_only == 1 { "file" } else { "files" },
+                        if content_only == 1 { "it" } else { "them" },
+                    );
                 }
             }
         }
