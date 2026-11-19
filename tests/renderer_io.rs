@@ -64,7 +64,7 @@ fn invoke(fixture: &Fixture, body: &str, arguments: &[&str]) -> Output {
     paths.extend(std::env::split_paths(
         &std::env::var_os("PATH").expect("PATH for Node fixture"),
     ));
-    let mut child = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(arguments)
         .arg("--root")
         .arg(fixture.path())

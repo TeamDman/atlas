@@ -1,6 +1,6 @@
 //! A source change must survive selection; syntactic uncertainty must remain visible.
 mod support;
-use atlas::{
+use cargo_atlas::{
     discovery,
     representations::{self, Panel, Query, Selector},
 };
@@ -210,7 +210,8 @@ fn unknowns_and_no_preparation_remain_explicit_in_both_backends() {
     );
     let ascii = representations::ascii(&v, Panel::All);
     assert!(ascii.contains("Unknown observations"));
-    let artifact = representations::pele(&v, Panel::All, atlas::render::Theme::Light).unwrap();
+    let artifact =
+        representations::pele(&v, Panel::All, cargo_atlas::render::Theme::Light).unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("viewBox"));
     assert!(svg.contains("Graph"));
@@ -238,8 +239,10 @@ fn matrix_renders_nested_borrows_and_contract_titles_keep_all_literal_sites() {
         "checked: &'a Checked, graphs: Vec<&'a Graph> }",
     ) + "\nfn extra()->Graph { let _=Graph {value:1}; Graph {value:2} }";
     let (_f, _, v) = inspect(&source);
-    let artifact = representations::pele(&v, Panel::All, atlas::render::Theme::Light).unwrap();
-    let matrix = representations::pele(&v, Panel::Retention, atlas::render::Theme::Light).unwrap();
+    let artifact =
+        representations::pele(&v, Panel::All, cargo_atlas::render::Theme::Light).unwrap();
+    let matrix =
+        representations::pele(&v, Panel::Retention, cargo_atlas::render::Theme::Light).unwrap();
     let native = String::from_utf8(matrix.companions[0].bytes.clone()).unwrap();
     assert!(native.contains("#38;graphs*"));
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();

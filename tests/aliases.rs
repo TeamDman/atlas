@@ -1,6 +1,6 @@
 //! Named aliases remain written declarations, not expanded structures or ownership claims.
 mod support;
-use atlas::{
+use cargo_atlas::{
     comparison, discovery,
     representations::{self, Panel, Query, Role, Selector},
 };
@@ -63,7 +63,7 @@ fn alias_is_selectable_in_public_contracts_producers_preparation_and_comparison(
         .find(|p| p.function.name == "prepare")
         .unwrap();
     assert_eq!(preparation.calls[0].1.name, "infer");
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(["representations", "--root"])
         .arg(fixture.path())
         .args(["--type", "Forms", "--panel", "contracts", "--json"])
@@ -127,7 +127,8 @@ fn preparation_picture_shares_callee_identity_without_merging_callers() {
     );
     let view = representations::project(&facts, &query(&["Forms"])).unwrap();
     let artifact =
-        representations::pele(&view, Panel::Preparation, atlas::render::Theme::Light).unwrap();
+        representations::pele(&view, Panel::Preparation, cargo_atlas::render::Theme::Light)
+            .unwrap();
     let source = String::from_utf8(artifact.companions[0].bytes.clone()).unwrap();
     assert_eq!(source.matches("infer()").count(), 1);
     assert!(source.contains("prepare_again()"));

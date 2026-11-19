@@ -22,7 +22,7 @@ Every diagram prints as text by default. To draw an image, add
 `--backend pele` (this needs Node.js 20 or newer):
 
 ```sh
-atlas dependencies --relation calls --backend pele
+cargo atlas dependencies --relation calls --backend pele
 ```
 
 Atlas saves the image under `target/atlas/`; use `--out path/to/file.svg` to
@@ -40,7 +40,7 @@ Images are dark by default. Add `--theme light` for dark text on a white
 background, for example to print a diagram or embed it in a light page:
 
 ```sh
-atlas dependencies --relation calls --backend pele --theme light
+cargo atlas dependencies --relation calls --backend pele --theme light
 ```
 
 The colours are written into the SVG itself, so the image looks the same in
@@ -49,10 +49,10 @@ a browser, an image viewer or a converter such as `rsvg-convert`.
 ## Which files depend on which
 
 ```sh
-atlas dependencies --relation calls
-atlas dependencies --relation signatures
-atlas dependencies --relation fields
-atlas dependencies --relation all --scope src/backend
+cargo atlas dependencies --relation calls
+cargo atlas dependencies --relation signatures
+cargo atlas dependencies --relation fields
+cargo atlas dependencies --relation all --scope src/backend
 ```
 
 `dependencies` draws one box per file and one arrow for each way a file uses
@@ -85,9 +85,9 @@ you can see code that nothing else uses.
 ## Which functions handle a type
 
 ```sh
-atlas representations --type Tree --panel producers
-atlas representations --type Tree,Checked --panel contracts --backend pele
-atlas representations --query pipeline.json --panel all --backend pele
+cargo atlas representations --type Tree --panel producers
+cargo atlas representations --type Tree,Checked --panel contracts --backend pele
+cargo atlas representations --query pipeline.json --panel all --backend pele
 ```
 
 A *representation* is a type that carries data through your program. This view
@@ -166,9 +166,9 @@ recursively.
 ## What a function does
 
 ```sh
-atlas flow --path src/main.rs --function main
-atlas flow --path src/main.rs --function main --depth 1 --backend pele
-atlas flow --path src/main.rs --function main --detail control --backend pele
+cargo atlas flow --path src/main.rs --function main
+cargo atlas flow --path src/main.rs --function main --depth 1 --backend pele
+cargo atlas flow --path src/main.rs --function main --detail control --backend pele
 ```
 
 `flow` shows the steps inside one function in the order they are written:
@@ -207,8 +207,8 @@ operator overload does. The test file
 ## How a change affected a type
 
 ```sh
-atlas compare --before HEAD~1 --query pipeline.json
-atlas compare --before v1.0.0 --after v1.1.0 --query pipeline.json --backend pele
+cargo atlas compare --before HEAD~1 --query pipeline.json
+cargo atlas compare --before v1.0.0 --after v1.1.0 --query pipeline.json --backend pele
 ```
 
 `compare` applies the same saved question to two versions of the code and
@@ -239,8 +239,8 @@ read.
 ## An overview from declared stages
 
 ```sh
-atlas overview --adapter path/to/adapter --backend pele
-atlas overview --adapter path/to/adapter --declarations src/stages.rs --json
+cargo atlas overview --adapter path/to/adapter --backend pele
+cargo atlas overview --adapter path/to/adapter --declarations src/stages.rs --json
 ```
 
 Some projects describe their own structure in code, for example with a
@@ -266,7 +266,7 @@ but they never add or hide observed relationships.
 - `map --architecture PROFILE` and `program --architecture PROFILE` draw the
   groups and permissions declared in an *architecture profile*: an older JSON
   format, separate from the [policy file](checks.md), described by the types in
-  the `atlas::architecture` module. They show what you declared, not what the
+  the `cargo_atlas::architecture` module. They show what you declared, not what the
   code does. For new projects, use a policy and `delta` instead.
 - `map --view types`, `name --relations` and `dump` show relationships found by
   matching names (*lexical* evidence). They are approximate. For exact

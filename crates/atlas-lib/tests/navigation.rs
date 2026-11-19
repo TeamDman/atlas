@@ -1,6 +1,6 @@
 //! Native navigation claims exercised through real immutable Cargo snapshots.
 mod support;
-use atlas_core::{
+use atlas_lib::{
     discovery::snapshot_workspace,
     model::Evidence,
     population::VisibilitySelection,
@@ -13,7 +13,7 @@ const ADMIT: &str = "//! Admission for fixture tiles — realization kernel §5.
 const GRADE: &str = "pub struct Cost;\n\npub use self::Cost as PublicCost;\n\nmacro_rules! grade_table {\n    () => {};\n}\n";
 const LIB: &str =
     "//! Fixture crate root.\n\npub mod admit;\npub mod grade;\n\npub use crate::admit::Tile;\n";
-fn fixture(extra: &str) -> (Fixture, atlas_core::discovery::Snapshot) {
+fn fixture(extra: &str) -> (Fixture, atlas_lib::discovery::Snapshot) {
     let root = Fixture::new(&[]);
     let dir = root.path().join("crates/demo-fix/src");
     fs::create_dir_all(&dir).expect("navigation fixture prerequisite must succeed");
@@ -236,7 +236,7 @@ fn external_import_shadowing_remains_explicitly_unresolved() {
             .expect("explicit unknown");
         assert!(matches!(
             edge.resolution,
-            atlas_core::model::Resolution::Unresolved(_)
+            atlas_lib::model::Resolution::Unresolved(_)
         ));
         assert!(edge.candidates.is_empty());
     }
@@ -400,8 +400,8 @@ fn a_multiline_attribute_between_cfg_and_module_cannot_add_test_lines_to_census(
 
 #[test]
 fn dump_serializes_the_existing_item_and_edge_authorities() {
-    use atlas_core::queries::navigation::ExportKind;
-    use atlas_core::source::{ItemKind, Visibility};
+    use atlas_lib::queries::navigation::ExportKind;
+    use atlas_lib::source::{ItemKind, Visibility};
     let (_root, snapshot) = fixture("");
     let nav = Navigation::new(&snapshot, VisibilitySelection::All).expect("navigation");
     let dump = nav.dump().expect("dump");
@@ -430,7 +430,7 @@ fn dump_serializes_the_existing_item_and_edge_authorities() {
         && e.evidence == Evidence::TypeBodyMention));
     assert!(dump.exports.iter().any(|e| e.source_name == "Tile"
         && e.kind == ExportKind::Facade
-        && matches!(e.target, atlas_core::model::Resolution::Unique(_))));
+        && matches!(e.target, atlas_lib::model::Resolution::Unique(_))));
     assert!(dump.exports.iter().any(|e| e.source_name == "Cost"
         && e.local_name == "PublicCost"
         && e.kind == ExportKind::Reexport));
@@ -442,7 +442,7 @@ fn dump_serializes_the_existing_item_and_edge_authorities() {
 }
 #[test]
 fn public_root_reexports_are_the_only_facade_edges() {
-    use atlas_core::queries::navigation::ExportKind;
+    use atlas_lib::queries::navigation::ExportKind;
     let (root, _) = fixture("");
     fs::write(
         root.path().join("crates/demo-fix/src/lib.rs"),
@@ -472,7 +472,7 @@ fn public_root_reexports_are_the_only_facade_edges() {
 }
 #[test]
 fn grouped_exports_keep_bound_names_paths_and_typed_missing_targets() {
-    use atlas_core::{model::Resolution, queries::navigation::BindingEvidence};
+    use atlas_lib::{model::Resolution, queries::navigation::BindingEvidence};
     let (root, _) = fixture("");
     fs::write(root.path().join("crates/demo-fix/src/lib.rs"), format!("{LIB}pub use crate::{{admit::Tile as PublicTile, grade::{{Cost as Fee, Missing as Unknown}}}};\n")).expect("exports");
     let snapshot = snapshot_workspace(root.path()).expect("snapshot");
@@ -503,7 +503,7 @@ fn grouped_exports_keep_bound_names_paths_and_typed_missing_targets() {
 }
 #[test]
 fn export_candidates_preserve_qualified_and_name_preference_evidence() {
-    use atlas_core::{model::Resolution, queries::navigation::BindingEvidence};
+    use atlas_lib::{model::Resolution, queries::navigation::BindingEvidence};
     let (root, _) = fixture("");
     let src = root.path().join("crates/demo-fix/src");
     fs::write(src.join("a.rs"), "pub struct Repeated;\n").expect("a");
@@ -545,7 +545,7 @@ fn export_candidates_preserve_qualified_and_name_preference_evidence() {
 
 #[test]
 fn exports_keep_global_ambiguity_qualified_priority_and_package_context() {
-    use atlas_core::{model::Resolution, queries::navigation::BindingEvidence};
+    use atlas_lib::{model::Resolution, queries::navigation::BindingEvidence};
     let root = Fixture::new(&[]);
     fs::write(
         root.path().join("Cargo.toml"),
@@ -626,7 +626,7 @@ fn exports_keep_global_ambiguity_qualified_priority_and_package_context() {
 }
 #[test]
 fn shared_export_sites_keep_distinct_occurrence_and_declaration_ids() {
-    use atlas_core::{model::Resolution, queries::navigation::ExportKind};
+    use atlas_lib::{model::Resolution, queries::navigation::ExportKind};
     let root = Fixture::new(&[]);
     fs::create_dir_all(root.path().join("src/inner/src")).expect("directories");
     fs::write(root.path().join("Cargo.toml"), "[package]\nname='outer'\nversion='0.0.0'\nedition='2024'\n[workspace]\nmembers=['src/inner']\n").expect("manifest");

@@ -45,7 +45,7 @@ fn inherited_git_environment_cannot_redirect_revision_identity() {
     let expected = commit(&intended);
     let other = commit(&foreign);
     assert_ne!(expected, other);
-    let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .current_dir("/")
         .args(["diff", "HEAD", "--root"])
         .arg(intended.path())

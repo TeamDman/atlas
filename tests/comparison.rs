@@ -1,6 +1,6 @@
 //! Contract identity ambiguity is judged over the observations in the question.
 mod support;
-use atlas::{
+use cargo_atlas::{
     analysis::Analysis,
     comparison, discovery,
     representations::{Facts, Query},

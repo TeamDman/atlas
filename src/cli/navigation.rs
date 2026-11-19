@@ -1,7 +1,7 @@
 //! Navigation owns legacy lexical and explicit-population command routing.
 //! The two report schemas are intentional compatibility contracts. Both read the
 //! shared capture/grammar; selected native output is formatted only after selection.
-use atlas_core::{
+use atlas_lib::{
     Result, discovery,
     population::VisibilitySelection,
     queries::navigation::{self, Navigation},
@@ -94,7 +94,7 @@ fn census(report: &navigation::Census) -> Result<String> {
         return module(report, false, false);
     };
     let mut text = format!(
-        "atlas census — {} · {} subjects; native source-tree lines\n",
+        "cargo atlas census — {} · {} subjects; native source-tree lines\n",
         report.scope,
         report.population.label()
     );
@@ -118,7 +118,7 @@ fn tally(text: &mut String, key: &str, tally: navigation::Tally) -> Result<()> {
 }
 fn name(report: &navigation::Name) -> Result<String> {
     let mut text = format!(
-        "atlas name — {} · {} {} matches, {} hidden; ~{} textual references\n",
+        "cargo atlas name — {} · {} {} matches, {} hidden; ~{} textual references\n",
         report.query,
         report.matches.len(),
         report.population.label(),
@@ -136,7 +136,7 @@ fn name(report: &navigation::Name) -> Result<String> {
             site.visibility_restriction.as_ref().map_or_else(
                 || site.visibility.label().to_owned(),
                 |scope| {
-                    if site.visibility == atlas_core::source::Visibility::PubIn {
+                    if site.visibility == atlas_lib::source::Visibility::PubIn {
                         format!("pub(in {scope})")
                     } else {
                         site.visibility.label().to_owned()
@@ -173,7 +173,7 @@ fn name(report: &navigation::Name) -> Result<String> {
 }
 fn module(report: &navigation::Module, items: bool, graph: bool) -> Result<String> {
     let mut text = format!(
-        "atlas module — {} · {} subjects\n",
+        "cargo atlas module — {} · {} subjects\n",
         report.path,
         report.population.label()
     );
@@ -408,10 +408,10 @@ fn legacy(
     json_output: bool,
     relations: bool,
 ) -> Result<()> {
-    let graph = atlas::discovery::scan_metadata(metadata)?;
+    let graph = cargo_atlas::discovery::scan_metadata(metadata)?;
     let text = match question {
         Question::Census(scope) => {
-            let result = atlas::queries::census(&graph, scope)?;
+            let result = cargo_atlas::queries::census(&graph, scope)?;
             if json_output {
                 super::json(&result)?
             } else {
@@ -419,7 +419,7 @@ fn legacy(
             }
         }
         Question::Name(name) => {
-            let result = atlas::queries::name(&graph, name)?;
+            let result = cargo_atlas::queries::name(&graph, name)?;
             if json_output {
                 super::json(&result)?
             } else {
@@ -427,7 +427,7 @@ fn legacy(
             }
         }
         Question::Module { path, .. } => {
-            let result = atlas::queries::module(&graph, path)?;
+            let result = cargo_atlas::queries::module(&graph, path)?;
             if json_output {
                 super::json(&result)?
             } else {

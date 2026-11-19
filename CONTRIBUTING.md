@@ -25,7 +25,7 @@ CI runs the same steps.
 [ARCHITECTURE.md](ARCHITECTURE.md) maps the code and traces the main command
 paths. In short:
 
-- `crates/atlas-core/` is the library: source capture, qualified analysis,
+- `crates/atlas-lib/` is the library: source capture, qualified analysis,
   navigation and review queries, architecture checks and revision reading.
 - `src/cli/` defines commands and their options. `src/views/` selects
   observations for a diagram; `src/render/` draws them as ASCII or SVG.

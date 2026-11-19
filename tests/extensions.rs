@@ -2,7 +2,7 @@
 #[path = "support/adapter.rs"]
 mod example_adapter;
 mod support;
-use atlas::{
+use cargo_atlas::{
     adapter::{self, Request, Snapshot},
     discovery,
     render::{Ascii, Pele, Renderer, UnsupportedView, View},
@@ -143,7 +143,10 @@ fn constant_syntax_stays_opaque_when_computed_and_local_const_work_is_not_a_call
 
 struct GraphOnly;
 impl Renderer for GraphOnly {
-    fn render(&self, g: &atlas::diagram::Diagram) -> atlas::Result<atlas::render::Artifact> {
+    fn render(
+        &self,
+        g: &cargo_atlas::diagram::Diagram,
+    ) -> cargo_atlas::Result<cargo_atlas::render::Artifact> {
         Ascii.render(g)
     }
 }
@@ -162,7 +165,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
         preparation_functions: vec![],
     };
     let views = representations::project(&facts, &q).unwrap();
-    let graph = atlas::workflow::read(f.path(), "src/build.rs", "build")
+    let graph = cargo_atlas::workflow::read(f.path(), "src/build.rs", "build")
         .unwrap()
         .diagram();
     for view in [
@@ -173,7 +176,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
         assert_eq!(text.primary.suffix, "txt");
         let svg = Pele {
             html: false,
-            theme: atlas::render::Theme::Light,
+            theme: cargo_atlas::render::Theme::Light,
         }
         .render_view(view)
         .unwrap();
@@ -197,7 +200,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
     );
     let html = Pele {
         html: true,
-        theme: atlas::render::Theme::Light,
+        theme: cargo_atlas::render::Theme::Light,
     }
     .render_view(View::Representations(
         &views,
@@ -210,7 +213,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
 
 #[test]
 fn independently_built_adapters_use_only_public_api_and_the_stock_cli() {
-    let cli = Path::new(env!("CARGO_BIN_EXE_atlas"));
+    let cli = Path::new(env!("CARGO_BIN_EXE_cargo-atlas"));
     let before = fs::read(cli).unwrap();
     let adapter = plugin();
     assert_eq!(
@@ -246,7 +249,7 @@ fn independently_built_adapters_use_only_public_api_and_the_stock_cli() {
 #[test]
 fn overview_requires_an_explicit_adapter() {
     let f = project();
-    let run = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let run = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .arg("overview")
         .arg(f.path())
         .arg("--json")
@@ -307,7 +310,7 @@ fn source_changes_during_an_adapter_call_refuse_before_rendering() {
         serde_json::to_string(&serde_json::to_string(&reply).unwrap()).unwrap()
     );
     let mutator = executable(&f, &body);
-    let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .arg("overview")
         .arg(f.path())
         .arg("--adapter")
@@ -371,7 +374,7 @@ fn overview_cannot_replace_the_adapter_it_invoked() {
     let adapter = f.path().join("adapter.txt");
     fs::copy(plugin(), &adapter).expect("copy adapter");
     let before = fs::read(&adapter).expect("adapter bytes");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .arg("overview")
         .arg("--root")
         .arg(f.path())
@@ -397,7 +400,7 @@ fn overview_protects_a_relative_adapter_in_the_callers_directory() {
     let adapter = launch.path().join("adapter.txt");
     fs::copy(plugin(), &adapter).expect("copy adapter");
     let before = fs::read(&adapter).expect("adapter bytes");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .current_dir(launch.path())
         .arg("overview")
         .arg("--root")

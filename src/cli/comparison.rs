@@ -1,6 +1,8 @@
 //! The same question applied to an immutable source revision and current/exact source.
 use crate::cli::output::artifact as artifact_output;
-use atlas::{Result, comparison, discovery, render::View, representations, revision::Revision};
+use cargo_atlas::{
+    Result, comparison, discovery, render::View, representations, revision::Revision,
+};
 use clap::Args;
 use std::{
     fs,
@@ -22,7 +24,7 @@ pub(crate) struct Options {
 }
 fn read(root: &Path) -> Result<representations::Facts> {
     let snapshot = discovery::snapshot_workspace(root)?;
-    atlas_core::analysis::Analysis::new(&snapshot)?.representations()
+    atlas_lib::analysis::Analysis::new(&snapshot)?.representations()
 }
 pub(crate) fn run(
     root: &Path,
@@ -41,7 +43,7 @@ pub(crate) fn run(
     let after_facts = if let Some(after) = &after {
         read(&after.root)?
     } else {
-        atlas_core::analysis::Analysis::new(&snapshot)?.representations()?
+        atlas_lib::analysis::Analysis::new(&snapshot)?.representations()?
     };
     let query = options
         .query

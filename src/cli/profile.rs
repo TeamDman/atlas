@@ -1,5 +1,5 @@
 //! Read only the explicitly selected architecture declaration file.
-use atlas::{Result, architecture::Architecture};
+use cargo_atlas::{Result, architecture::Architecture};
 use std::{fs, path::Path};
 pub(super) fn architecture(
     root: &Path,

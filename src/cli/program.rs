@@ -4,7 +4,7 @@ use super::{
     output::{self, Backend, RenderOptions, protected_inputs, render},
     profile::architecture,
 };
-use atlas::{
+use cargo_atlas::{
     Result,
     diagram::{Level, Query, View},
     discovery, program,
@@ -40,7 +40,7 @@ pub(super) fn run(
     let architecture = architecture.ok_or("program requires architecture boundaries")?;
     let snapshot = discovery::snapshot_metadata(metadata)?;
     let graph = snapshot.graph();
-    let analysis = atlas_core::analysis::Analysis::new(&snapshot)?;
+    let analysis = atlas_lib::analysis::Analysis::new(&snapshot)?;
     let entry = options.path.as_deref().zip(options.function.as_deref());
     let program = program::from_analysis(&analysis, &architecture, entry)?;
     let overview = program.overview();

@@ -27,7 +27,7 @@ fn build() -> PathBuf {
     fs::write(
         crate_dir.join("Cargo.toml"),
         format!(
-            "[package]\nname='external-atlas-consumer'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\natlas={{path={:?}}}\n[[bin]]\nname='pipeline-adapter'\npath='src/pipeline.rs'\n",
+            "[package]\nname='external-atlas-consumer'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\ncargo-atlas={{path={:?}}}\n[[bin]]\nname='pipeline-adapter'\npath='src/pipeline.rs'\n",
             root.to_str().expect("UTF-8 manifest directory")
         ),
     )

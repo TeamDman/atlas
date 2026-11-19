@@ -1,6 +1,6 @@
 //! Architecture declarations and quotient graphs have different evidence domains.
 mod support;
-use atlas::{
+use cargo_atlas::{
     architecture::Architecture,
     diagram::{self, Level, Query, View},
     discovery,
@@ -87,7 +87,7 @@ fn query(level: Level, view: View, focus: Option<&str>) -> Query {
         focus: focus.map(str::to_owned),
     }
 }
-fn conserved(graph: &atlas::model::SourceGraph, d: &diagram::Diagram) {
+fn conserved(graph: &cargo_atlas::model::SourceGraph, d: &diagram::Diagram) {
     let before: BTreeSet<_> = graph.relationships.iter().map(|r| &r.id).collect();
     let after: Vec<_> = d
         .edges
@@ -133,7 +133,7 @@ fn quotient_collapses_internal_edges_and_summarizes_ambiguity_without_question_n
         &query(Level::Stages, View::Types, None),
     )
     .unwrap();
-    let coarse = atlas::render::mermaid(&d).unwrap();
+    let coarse = cargo_atlas::render::mermaid(&d).unwrap();
     assert!(coarse.contains("|\"uses types\"|"));
     assert!(
         !coarse.contains("consumes")
@@ -259,7 +259,7 @@ fn profile_refuses_duplicates_overlaps_unknown_deps_and_missing_paths() {
 #[test]
 fn cli_paths_are_workspace_relative_with_spaces_and_docs_exclude_source_payloads() {
     let f = fixture();
-    let binary = env!("CARGO_BIN_EXE_atlas");
+    let binary = env!("CARGO_BIN_EXE_cargo-atlas");
     let run = || {
         Command::new(binary)
             .current_dir("/")
@@ -354,7 +354,7 @@ fn profile_refuses_non_normalized_spellings_and_symlink_boundaries() {
 }
 #[test]
 fn html_links_refuse_active_or_absolute_urls_and_escape_local_evidence() {
-    use atlas::render::{Pele, Renderer};
+    use cargo_atlas::render::{Pele, Renderer};
     let f = fixture();
     let profile = Architecture::parse(PROFILE, f.path()).unwrap();
     let graph = discovery::scan_workspace(f.path()).unwrap();
@@ -384,7 +384,7 @@ fn html_links_refuse_active_or_absolute_urls_and_escape_local_evidence() {
 #[test]
 fn html_primary_cannot_overwrite_its_svg_companion() {
     let f = fixture();
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args([
             "map",
             f.path().to_str().unwrap(),

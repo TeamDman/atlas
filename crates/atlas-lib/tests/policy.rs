@@ -1,6 +1,6 @@
 //! Complete generic policy validation, helper custody and failure outcomes.
 mod support;
-use atlas_core::{
+use atlas_lib::{
     analysis::Analysis,
     checks::policy::{
         self, Inputs, Match, PathState, PatternState, Policy, ReferenceResolution, Resolution,

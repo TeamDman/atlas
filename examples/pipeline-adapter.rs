@@ -16,7 +16,7 @@
     clippy::print_stderr,
     reason = "the adapter executable reports failures on stderr, reserving stdout for its protocol"
 )]
-use atlas::{
+use cargo_atlas::{
     Result,
     adapter::{self, ProjectAdapter, Request},
     architecture::{Architecture, Kind, Module},

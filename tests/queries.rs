@@ -1,6 +1,6 @@
 //! Query facts come from the same source population and keep uncertainty visible.
 mod support;
-use atlas::{discovery, queries};
+use cargo_atlas::{discovery, queries};
 use support::Fixture;
 #[test]
 fn census_and_module_queries_share_the_source_population() {

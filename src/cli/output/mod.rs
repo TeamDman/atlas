@@ -3,7 +3,7 @@ pub(super) mod artifact;
 mod files;
 
 use self::files::{absolute, preflight, publish};
-use atlas::{
+use cargo_atlas::{
     Result,
     diagram::{Diagram, Query},
     model::SourceGraph,
@@ -229,7 +229,7 @@ pub(super) enum Backend {
 impl Backend {
     pub(crate) fn render_view(
         self,
-        view: atlas::render::View<'_>,
+        view: cargo_atlas::render::View<'_>,
         theme: Theme,
     ) -> Result<Artifact> {
         match self {
@@ -271,7 +271,7 @@ pub(super) fn render(options: &RenderOptions, diagram: &Diagram) -> Result<Artif
 }
 pub(super) fn protected_inputs(
     metadata: &cargo_metadata::Metadata,
-    graph: &atlas::model::SourceGraph,
+    graph: &cargo_atlas::model::SourceGraph,
     extra: impl IntoIterator<Item = PathBuf>,
 ) -> Vec<PathBuf> {
     metadata

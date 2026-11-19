@@ -1,6 +1,6 @@
 //! Qualified file relationships with exact source witnesses.
 use crate::cli::output::artifact as artifact_output;
-use atlas::{
+use cargo_atlas::{
     Result,
     dependencies::{self, Relation},
     discovery,
@@ -38,7 +38,7 @@ pub(crate) fn run(
                 .unwrap_or("src"),
         ),
     )?;
-    let facts = atlas_core::analysis::Analysis::new(&snapshot)?.representations()?;
+    let facts = atlas_lib::analysis::Analysis::new(&snapshot)?.representations()?;
     let view = dependencies::project(&facts, &scope, options.relation)?;
     options.output.emit(
         root,

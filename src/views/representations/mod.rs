@@ -4,7 +4,7 @@
 //! not value identity, complete ownership, runtime order or a duplication verdict.
 mod project;
 pub use crate::render::representations::{Panel, ascii, pele};
-pub use atlas_core::representations::{
+pub use atlas_lib::representations::{
     Constant, Constructor, Facts, Function, Literal, Reference, ResolvedCall, Role, Type,
     UnknownCall, UnknownType, extract,
 };

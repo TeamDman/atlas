@@ -4,7 +4,7 @@ use super::{
     output::{self, Backend, RenderOptions, protected_inputs, render},
     profile::architecture,
 };
-use atlas::{
+use cargo_atlas::{
     Result,
     architecture::WorkflowAnchor,
     diagram::{Diagram, Level, Query, View},
@@ -84,7 +84,7 @@ pub(super) fn run(
             .function
             .as_deref()
             .ok_or("--depth needs --function")?;
-        let analysis = atlas_core::analysis::Analysis::new(&snapshot)?;
+        let analysis = atlas_lib::analysis::Analysis::new(&snapshot)?;
         let (flow, diagram) =
             analysis.expanded_with_detail(path, function, options.depth, options.detail)?;
         (vec![(function.to_owned(), flow)], diagram)
@@ -166,7 +166,7 @@ fn workflow_diagram(
         nodes: vec![],
         edges: vec![],
         inventory: vec![],
-        coverage: atlas::diagram::Coverage::default(),
+        coverage: cargo_atlas::diagram::Coverage::default(),
         notes: vec![],
         evidence_links: vec![],
     };

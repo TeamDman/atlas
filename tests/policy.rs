@@ -23,7 +23,7 @@ fn policy_command_distinguishes_pass_refusal_and_unavailable() {
         ),
     ] {
         fixture.write("policy.toml", &text);
-        let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
             .current_dir("/")
             .args(["policy", "--root"])
             .arg(fixture.path())

@@ -17,7 +17,7 @@ fn fixture() -> Fixture {
     ])
 }
 fn run(fixture: &Fixture, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_atlas"))
+    Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .current_dir("/")
         .args(["--root"])
         .arg(fixture.path())

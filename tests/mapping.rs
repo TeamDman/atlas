@@ -1,5 +1,5 @@
 //! End-to-end source facts and renderer fidelity, not golden architecture text.
-use atlas::{
+use cargo_atlas::{
     diagram::{self, Level as Detail},
     discovery,
     model::{Evidence, Resolution},
@@ -8,10 +8,10 @@ use atlas::{
 mod support;
 use support::Fixture;
 fn project(
-    graph: &atlas::model::SourceGraph,
+    graph: &cargo_atlas::model::SourceGraph,
     scope: &str,
     level: Detail,
-) -> atlas::Result<atlas::diagram::Diagram> {
+) -> cargo_atlas::Result<cargo_atlas::diagram::Diagram> {
     diagram::project(
         graph,
         None,
@@ -231,7 +231,7 @@ fn cycle_diamond_and_ambiguous_edges_are_conserved_by_projection() {
 }
 #[test]
 fn mermaid_labels_escape_quotes_html_and_directives() {
-    use atlas::diagram::{Diagram, Node};
+    use cargo_atlas::diagram::{Diagram, Node};
     let label = "name\"<script>&%%{init:";
     let d = Diagram {
         title: "test".into(),
@@ -260,13 +260,13 @@ fn mermaid_labels_escape_quotes_html_and_directives() {
 }
 #[test]
 fn embedded_pele_renders_without_checkout_adapter() {
-    use atlas::render::Pele;
+    use cargo_atlas::render::Pele;
     let f = Fixture::new(&[("src/lib.rs", "pub struct Value;")]);
     let g = discovery::scan_workspace(f.path()).unwrap();
     let d = project(&g, "src", Detail::Files).unwrap();
     let artifact = Pele {
         html: false,
-        theme: atlas::render::Theme::Light,
+        theme: cargo_atlas::render::Theme::Light,
     }
     .render(&d)
     .unwrap();
@@ -277,7 +277,7 @@ fn embedded_pele_renders_without_checkout_adapter() {
 
 #[test]
 fn pele_images_are_dark_by_default_and_carry_concrete_colours() {
-    use atlas::render::{Pele, Theme};
+    use cargo_atlas::render::{Pele, Theme};
     let f = Fixture::new(&[("src/lib.rs", "pub struct Value;")]);
     let g = discovery::scan_workspace(f.path()).unwrap();
     let d = project(&g, "src", Detail::Files).unwrap();
@@ -313,7 +313,7 @@ fn utf8_source_is_inventoried_without_byte_boundary_panics() {
 
 #[test]
 fn malformed_external_diagram_is_refused_by_both_backends() {
-    use atlas::diagram::{Diagram, Edge};
+    use cargo_atlas::diagram::{Diagram, Edge};
     let d = Diagram {
         title: "bad".into(),
         nodes: vec![],
@@ -389,7 +389,7 @@ fn cli_retains_evidence_when_external_render_fails_and_refuses_collisions() {
         ),
     )]);
     let output = f.path().join("failed.html");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args([
             "map",
             f.path().to_str().unwrap(),
@@ -413,7 +413,7 @@ fn cli_retains_evidence_when_external_render_fails_and_refuses_collisions() {
         );
     }
     let collision = f.path().join("collision.mmd");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args([
             "map",
             f.path().to_str().unwrap(),

@@ -1,5 +1,5 @@
 //! Saved questions feed native projections; output is explicit and source-safe.
-use atlas::{
+use cargo_atlas::{
     Result, discovery,
     render::View,
     representations::{self, Panel, Query},
@@ -60,7 +60,7 @@ pub(crate) fn run(
     };
     let snapshot = discovery::snapshot_metadata(metadata)?;
     let graph = snapshot.graph();
-    let facts = atlas_core::analysis::Analysis::new(&snapshot)?.representations()?;
+    let facts = atlas_lib::analysis::Analysis::new(&snapshot)?.representations()?;
     let views = representations::project(&facts, &query)?;
     options.output.emit(
         root,

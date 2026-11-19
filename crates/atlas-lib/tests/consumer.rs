@@ -8,7 +8,7 @@ fn independent_default_consumer_reads_source_and_neutral_control() {
     let fixture = Fixture::new(&[]);
     let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     fs::create_dir(fixture.path().join("src")).expect("consumer source directory");
-    fs::write(fixture.path().join("Cargo.toml"), format!("[package]\nname='native-core-consumer'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\natlas-core={{path={:?},default-features=false}}\n", core.to_str().expect("core path"))).expect("consumer manifest");
+    fs::write(fixture.path().join("Cargo.toml"), format!("[package]\nname='native-core-consumer'\nversion='0.0.0'\nedition='2024'\n[workspace]\n[dependencies]\natlas-lib={{path={:?},default-features=false}}\n", core.to_str().expect("core path"))).expect("consumer manifest");
     fs::write(
         fixture.path().join("src/lib.rs"),
         "pub struct Graph;\npub fn build() -> Graph { Graph }\n",
@@ -17,17 +17,17 @@ fn independent_default_consumer_reads_source_and_neutral_control() {
     fs::write(
         fixture.path().join("src/main.rs"),
         r#"
-fn main() -> atlas_core::Result<()> {
+fn main() -> atlas_lib::Result<()> {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let captured = atlas_core::discovery::snapshot_workspace(root)?;
+    let captured = atlas_lib::discovery::snapshot_workspace(root)?;
     assert!(captured.graph().files.iter().any(|file| file.path == "src/lib.rs"));
-    let analysis = atlas_core::analysis::Analysis::new(&captured)?;
+    let analysis = atlas_lib::analysis::Analysis::new(&captured)?;
     let facts = analysis.representations()?;
     assert!(facts.types.iter().any(|ty| ty.name == "Graph"));
     let (workflow, _) = analysis.expanded("src/lib.rs", "build", 0)?;
     let diagram = workflow.diagram();
     diagram.validate()?;
-    assert_eq!(diagram.level, atlas_core::diagram::Level::Declarations);
+    assert_eq!(diagram.level, atlas_lib::diagram::Level::Declarations);
     assert!(workflow.ascii().contains("build"));
     Ok(())
 }

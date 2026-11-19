@@ -1,6 +1,6 @@
 //! Qualified relations and project declarations cannot erase source contradictions.
 mod support;
-use atlas::{
+use cargo_atlas::{
     adapter, comparison,
     dependencies::{self, Relation},
     discovery, overview,
@@ -8,7 +8,13 @@ use atlas::{
 };
 use cargo_metadata::MetadataCommand;
 use support::Fixture;
-fn scan(f: &Fixture) -> (cargo_metadata::Metadata, atlas::model::SourceGraph, Facts) {
+fn scan(
+    f: &Fixture,
+) -> (
+    cargo_metadata::Metadata,
+    cargo_atlas::model::SourceGraph,
+    Facts,
+) {
     let m = MetadataCommand::new()
         .current_dir(f.path())
         .no_deps()
@@ -85,8 +91,8 @@ impl adapter::ProjectAdapter for Layers {
     fn declarations(
         &self,
         input: &adapter::Request,
-    ) -> atlas::Result<atlas::architecture::Architecture> {
-        use atlas::architecture::{Architecture, Kind, Module};
+    ) -> cargo_atlas::Result<cargo_atlas::architecture::Architecture> {
+        use cargo_atlas::architecture::{Architecture, Kind, Module};
         let layers = input.snapshot.constant(&input.source, "LAYERS")?;
         let mut modules = Vec::new();
         for row in layers.value.array().ok_or("LAYERS must be an array")? {
@@ -169,10 +175,14 @@ fn inferred()->Graph {Default::default()}
     assert_eq!(admit.failures[0].0.name, "Refused");
     assert_eq!(admit.failures[0].1.wrappers, ["Result[1]", "Box[0]"]);
     let svg = String::from_utf8(
-        representations::pele(&v, representations::Panel::All, atlas::render::Theme::Light)
-            .unwrap()
-            .primary
-            .bytes,
+        representations::pele(
+            &v,
+            representations::Panel::All,
+            cargo_atlas::render::Theme::Light,
+        )
+        .unwrap()
+        .primary
+        .bytes,
     )
     .unwrap();
     assert!(
@@ -208,7 +218,7 @@ fn comparison_has_aligned_values_revisions_and_no_invented_flow_edges() {
             .iter()
             .any(|c| c.subject.contains("explicitly calls"))
     );
-    let artifact = c.pele(atlas::render::Theme::Light).unwrap();
+    let artifact = c.pele(cargo_atlas::render::Theme::Light).unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("baseline-pin") && svg.contains("candidate-pin"));
     assert!(svg.contains("ADDED") && svg.contains("Before") && svg.contains("After"));
@@ -312,9 +322,9 @@ fn comparison_ignores_line_shifts_and_exposes_new_construction_and_preparation()
             .iter()
             .any(|c| c.category == "contract" && c.subject.contains("prepare_again"))
     );
-    let query = atlas::representations::Query {
+    let query = cargo_atlas::representations::Query {
         title: "Graph".into(),
-        types: vec![atlas::representations::Selector {
+        types: vec![cargo_atlas::representations::Selector {
             name: "Graph".into(),
             file: None,
         }],
@@ -359,7 +369,7 @@ fn comparison_reads_exact_git_source_without_switching_working_tree() {
     ]);
     let id = git(&["rev-parse", "HEAD"]);
     f.write("src/lib.rs", "pub struct After;\n");
-    let snapshot = atlas::revision::Revision::read(f.path(), &id).unwrap();
+    let snapshot = cargo_atlas::revision::Revision::read(f.path(), &id).unwrap();
     assert_eq!(
         std::fs::read_to_string(snapshot.root.join("src/lib.rs")).unwrap(),
         "pub struct Before;\n"
@@ -406,7 +416,7 @@ fn error_type_returners_keep_their_err_position_in_the_producer_view() {
     let artifact = representations::pele(
         &v,
         representations::Panel::Producers,
-        atlas::render::Theme::Light,
+        cargo_atlas::render::Theme::Light,
     )
     .unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();

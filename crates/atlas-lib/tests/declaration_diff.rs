@@ -1,5 +1,5 @@
 //! Donor declaration-review claims at the public immutable-snapshot boundary.
-use atlas_core::{
+use atlas_lib::{
     discovery::{Snapshot, snapshot_workspace},
     model::Evidence,
     population::VisibilitySelection,

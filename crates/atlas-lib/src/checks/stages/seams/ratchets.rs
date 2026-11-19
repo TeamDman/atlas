@@ -1,4 +1,4 @@
-//! The seam ratchets `atlas delta` applies: each refusal names its fix.
+//! The seam ratchets `cargo atlas delta` applies: each refusal names its fix.
 //!
 //! Counts are held against the candidate policy's rows and against the
 //! published policy (a recorded count only falls). New names are held
@@ -60,7 +60,7 @@ impl SeamReading {
                 };
                 if items.len() > row.items {
                     refusals.push(format!(
-                        "stage seam `{name}`: {reader} reads {} items of {read} past its boundary, above the row's {}; read {read} through its boundary, or retire a read (`atlas seams {name}` lists them)",
+                        "stage seam `{name}`: {reader} reads {} items of {read} past its boundary, above the row's {}; read {read} through its boundary, or retire a read (`cargo atlas seams {name}` lists them)",
                         items.len(),
                         row.items,
                     ));
@@ -223,7 +223,7 @@ impl SeamReading {
                     })
                     .collect();
                 let shown = if fresh.is_empty() {
-                    format!("`atlas seams {name} --items` lists them")
+                    format!("`cargo atlas seams {name} --items` lists them")
                 } else {
                     format!("new: {}", fresh.join(", "))
                 };
@@ -360,7 +360,7 @@ impl SeamReading {
                 .map_or(0, |row| row.pairs);
             if pairs.len() > held {
                 refusals.push(format!(
-                    "test coupling `{name}`: {owner}'s tests name {} (test file, item) pairs inside other stages, above the recorded {held}; test through the stages' boundary types, or retire a coupled test (`atlas seams {name} --items` lists them)",
+                    "test coupling `{name}`: {owner}'s tests name {} (test file, item) pairs inside other stages, above the recorded {held}; test through the stages' boundary types, or retire a coupled test (`cargo atlas seams {name} --items` lists them)",
                     pairs.len(),
                 ));
             }

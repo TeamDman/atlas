@@ -1,6 +1,6 @@
 //! Program orientation preserves actual call sites; it does not invent stage order.
 mod support;
-use atlas::{architecture::Architecture, discovery, program};
+use cargo_atlas::{architecture::Architecture, discovery, program};
 use cargo_metadata::MetadataCommand;
 use support::Fixture;
 fn profile(f: &Fixture, modules: serde_json::Value) -> Architecture {
@@ -12,7 +12,7 @@ fn profile(f: &Fixture, modules: serde_json::Value) -> Architecture {
 fn stage(name: &str, path: &str, entry: &str) -> serde_json::Value {
     serde_json::json!({"name":name,"kind":"stage","path":path,"entry":entry,"types":[],"dependencies":[]})
 }
-fn build(f: &Fixture, profile: &Architecture) -> atlas::Result<program::Program> {
+fn build(f: &Fixture, profile: &Architecture) -> cargo_atlas::Result<program::Program> {
     let metadata = MetadataCommand::new()
         .current_dir(f.path())
         .no_deps()

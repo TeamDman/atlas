@@ -1,10 +1,10 @@
 //! Caller-selected documentation auditing; citation markers are data, never inferred project identity.
-use atlas::Result;
-use atlas_core::{
+use atlas_lib::{
     documentation::{self, HeaderPopulation, HeaderScope, Policy},
     population::{Population, TestSelection, VisibilitySelection},
     source::ItemKind,
 };
+use cargo_atlas::Result;
 use clap::Args;
 #[derive(Args)]
 pub(crate) struct Options {
@@ -28,7 +28,7 @@ pub(crate) struct Options {
     json: bool,
 }
 pub(crate) fn run(metadata: &cargo_metadata::Metadata, options: &Options) -> Result<()> {
-    let snapshot = atlas_core::discovery::snapshot_metadata(metadata)?;
+    let snapshot = atlas_lib::discovery::snapshot_metadata(metadata)?;
     let markers = options
         .citation_markers
         .as_ref()

@@ -47,7 +47,7 @@ fn fixture() -> Fixture {
     fixture
 }
 fn run(fixture: &Fixture, before: &str, candidate: &str, markers: bool) -> Output {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_atlas"));
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"));
     command
         .current_dir("/")
         .args(["delta", before, "--root"])

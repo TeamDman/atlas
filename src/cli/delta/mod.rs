@@ -1,6 +1,5 @@
 //! Resolve identities, verify the source capture, judge paired inputs, then present the result.
-use atlas::{Result, discovery};
-use atlas_core::{
+use atlas_lib::{
     checks::{
         concentration,
         delta::{self, Basis},
@@ -8,6 +7,7 @@ use atlas_core::{
     },
     revision::GitStore,
 };
+use cargo_atlas::{Result, discovery};
 use clap::Args;
 use sha2::{Digest, Sha256};
 use std::{
@@ -173,7 +173,7 @@ impl Stats {
         let old_tokens = total(&measured.before.crates, |row| row.tokens);
         let density_before = old_tokens.saturating_mul(10) / before.max(1);
         let density_after = tokens.saturating_mul(10) / after.max(1);
-        let block = |shape: Option<&atlas_core::review::Shape>| {
+        let block = |shape: Option<&atlas_lib::review::Shape>| {
             shape
                 .and_then(|shape| shape.largest_block.as_ref())
                 .map_or(0, |block| block.lines)

@@ -37,7 +37,7 @@ flow uses the selected qualified index and its captured syntax cache.
 
 ## Where code belongs
 
-- **`crates/atlas-core/src/source/`** owns source bytes, physical/package/mount
+- **`crates/atlas-lib/src/source/`** owns source bytes, physical/package/mount
   membership, lexical projection, import/item grammar and the lexical graph.
   `discovery::Snapshot` retains one captured source per physical file plus its
   package observations. A physical file shared by packages has several contexts,
@@ -110,7 +110,7 @@ conversions define wire spellings explicitly. Diagnostic Debug formatting is not
 an encoding or a decision rule.
 
 The root library modules remain public compatibility paths. For example,
-`atlas_core::discovery::Snapshot` and `atlas::representations::Views` reexport the
+`atlas_lib::discovery::Snapshot` and `cargo_atlas::representations::Views` reexport the
 same definitions from their physical owners; the compatibility surface is not a
 second source model. Small reexports replace empty wrapper files.
 

@@ -1,21 +1,21 @@
 # Using the library
 
-Everything the `atlas` command does is also available from Rust, through the
-`atlas-core` crate. Use it to build your own reports, write tests that check
-your project's structure, or run checks the command line cannot express.
+Everything `cargo atlas` does is also available from Rust, through the
+[`atlas-lib`](https://crates.io/crates/atlas-lib) crate. Use it to build your
+own reports, write tests that check your project's structure, or run checks the
+command line cannot express.
 
-`atlas-core` has no command-line, rendering or Node.js dependencies. Neither
-crate is on crates.io yet, so depend on an exact commit:
+`atlas-lib` has no command-line, rendering or Node.js dependencies:
 
 ```toml
 [dependencies]
-atlas-core = { git = "https://github.com/flowerornament/atlas.git", rev = "<commit>", default-features = false }
+atlas-lib = "0.4"
 ```
 
 The optional `clap` feature adds command-line parsing support for diagram
-options. The `atlas` package re-exports all of `atlas-core` under the same
-paths and adds the renderers and the [declaration adapter](extensions.md)
-protocol.
+options. The `cargo-atlas` package re-exports all of `atlas-lib` under the
+same paths, as the `cargo_atlas` library, and adds the renderers and the
+[declaration adapter](extensions.md) protocol.
 
 ## The basic pattern
 
@@ -28,10 +28,10 @@ Every use of the library follows the same steps:
    and choosing exit codes is up to you.
 
 ```rust,no_run
-use atlas_core::{analysis::Analysis, discovery};
+use atlas_lib::{analysis::Analysis, discovery};
 use std::path::Path;
 
-fn tour(root: &Path) -> atlas_core::Result<()> {
+fn tour(root: &Path) -> atlas_lib::Result<()> {
     // Read the workspace once. Every later question uses this snapshot.
     let snapshot = discovery::snapshot_workspace(root)?;
 
@@ -65,7 +65,7 @@ new changes.
 | Audit documentation | `documentation::audit` |
 | Check an architecture policy | `checks::policy`, `checks::stages`, `checks::delta` |
 
-The Rust documentation (`cargo doc --open -p atlas-core`) describes every type.
+The Rust documentation (`cargo doc --open -p atlas-lib`) describes every type.
 The sections below explain how the pieces fit together.
 
 ## Snapshots
@@ -104,14 +104,14 @@ Production code is the default, and `cfg` alternatives are kept side by side.
 
 ## Navigation
 
-`Navigation` answers the same questions as `atlas census`, `name`, `module`
+`Navigation` answers the same questions as `cargo atlas census`, `name`, `module`
 and `dump`. Choose which visibility to include when you create it.
 
 ```rust,no_run
-use atlas_core::{discovery, population::VisibilitySelection, queries::navigation::Navigation};
+use atlas_lib::{discovery, population::VisibilitySelection, queries::navigation::Navigation};
 use std::path::Path;
 
-fn navigate(root: &Path) -> atlas_core::Result<()> {
+fn navigate(root: &Path) -> atlas_lib::Result<()> {
     let snapshot = discovery::snapshot_workspace(root)?;
     let navigation = Navigation::new(&snapshot, VisibilitySelection::RestrictedOrPublic)?;
     let census = navigation.census(None)?;       // everything, or Some("package")
@@ -135,10 +135,10 @@ touches your working copy. Take a snapshot of `revision.path()` to compare it
 with the current code:
 
 ```rust,no_run
-use atlas_core::{discovery, review, revision::Revision};
+use atlas_lib::{discovery, review, revision::Revision};
 use std::path::Path;
 
-fn review(root: &Path) -> atlas_core::Result<()> {
+fn review(root: &Path) -> atlas_lib::Result<()> {
     let current = discovery::snapshot_workspace(root)?;
     let previous = Revision::read(root, "HEAD~1")?;
     let before = discovery::snapshot_workspace(previous.path())?;
@@ -181,10 +181,10 @@ call directly. This is also how you write a *project wrapper*: a small program
 that supplies the project-specific inputs the command line cannot.
 
 ```rust,no_run
-use atlas_core::{analysis::Analysis, checks, checks::policy::{self, Policy}, discovery};
+use atlas_lib::{analysis::Analysis, checks, checks::policy::{self, Policy}, discovery};
 use std::path::Path;
 
-fn check(root: &Path) -> atlas_core::Result<()> {
+fn check(root: &Path) -> atlas_lib::Result<()> {
     let text = std::fs::read_to_string(root.join(".config/architecture.toml"))?;
     let policy = Policy::parse(&text)?;
     let snapshot = discovery::snapshot_workspace(root)?;
@@ -219,7 +219,7 @@ Other check functions:
 
 - `checks::typed_errors::read(&analysis, packages)` finds `Result<_, String>`
   and similar error types in production code.
-- `checks::delta::check` compares a baseline and a candidate, as `atlas delta`
+- `checks::delta::check` compares a baseline and a candidate, as `cargo atlas delta`
   does.
 
 ## Limits

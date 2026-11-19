@@ -77,7 +77,7 @@ pub fn build(
 
 /// Derive the same view from captured bytes; no source read or metadata reload.
 pub fn from_analysis(
-    analysis: &atlas_core::analysis::Analysis<'_>,
+    analysis: &atlas_lib::analysis::Analysis<'_>,
     architecture: &Architecture,
     entry: Option<(&str, &str)>,
 ) -> Result<Program> {

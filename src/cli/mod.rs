@@ -17,10 +17,15 @@ mod representations;
 mod review;
 mod stages;
 use args::{Cli, Command};
-use atlas::Result;
+use cargo_atlas::Result;
 use clap::Parser;
 pub(crate) fn run() -> Result<()> {
-    let cli = Cli::parse();
+    let mut args: Vec<_> = std::env::args_os().collect();
+    // Cargo runs `cargo atlas ARGS` as `cargo-atlas atlas ARGS`.
+    if args.get(1).is_some_and(|arg| arg == "atlas") {
+        args.remove(1);
+    }
+    let cli = Cli::parse_from(args);
     if matches!(&cli.command, Command::Related(_)) {
         eprintln!(
             "atlas: related is a compatibility alias; use name --relations (lexical co-mentions)."

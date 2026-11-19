@@ -1,6 +1,6 @@
 //! Whole paired-capture judgment, without host-specific Git or bead interpretation.
 mod support;
-use atlas_core::{
+use atlas_lib::{
     checks::{
         concentration,
         delta::{self, Basis, Inputs},
@@ -252,7 +252,7 @@ fn paired_capture_uses_each_revisions_package_members_without_reopening_the_base
     published
         .crate_graph
         .rule
-        .push(atlas_core::checks::policy::CrateRule {
+        .push(atlas_lib::checks::policy::CrateRule {
             name: "retired".into(),
             allowed: Some(Vec::new()),
             law: Some("leaf".into()),

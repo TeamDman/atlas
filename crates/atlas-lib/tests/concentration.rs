@@ -1,6 +1,6 @@
 //! Debt judgment at the captured-source boundary, including unavailable project evidence.
 mod support;
-use atlas_core::{
+use atlas_lib::{
     checks::{
         concentration::{self, Citations, Inputs},
         policy::{ConcentrationPolicy, Status},
@@ -26,7 +26,7 @@ fn policy(extra: &str) -> ConcentrationPolicy {
     ))
     .expect("policy fixture")
 }
-fn inputs(snapshot: &atlas_core::discovery::Snapshot) -> Inputs {
+fn inputs(snapshot: &atlas_lib::discovery::Snapshot) -> Inputs {
     Inputs {
         before_headers: concentration::observe_headers(snapshot, &["fixture:"])
             .expect("header reading"),
@@ -84,7 +84,7 @@ fn ruling_requires_the_project_interpretation_of_this_exact_commit_description()
         Status::Unavailable
     );
     evidence.citations = Some(Citations {
-        description_fingerprint: atlas_core::discovery::fingerprint(description.as_bytes()),
+        description_fingerprint: atlas_lib::discovery::fingerprint(description.as_bytes()),
         beads: BTreeSet::new(),
     });
     assert_eq!(

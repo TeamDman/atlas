@@ -1,6 +1,6 @@
 //! Executable source witnesses qualify the structural observations, not feasibility inference.
 mod support;
-use atlas::{diagram::Diagram, discovery, workflow};
+use cargo_atlas::{diagram::Diagram, discovery, workflow};
 use std::collections::BTreeSet;
 use support::Fixture;
 
@@ -257,14 +257,14 @@ fn compact_control_preserves_retained_paths_and_every_folded_observation() {
             .exec()
             .unwrap();
         let graph = discovery::scan_metadata(&metadata).unwrap();
-        let architecture = atlas::architecture::Architecture {
+        let architecture = cargo_atlas::architecture::Architecture {
             schema: 1,
             provenance: vec![],
             modules: vec![],
             workflows: vec![],
         };
         let index =
-            atlas_core::source_index::Index::new(fixture.path(), &metadata, &graph, &architecture)
+            atlas_lib::source_index::Index::new(fixture.path(), &metadata, &graph, &architecture)
                 .unwrap();
         for depth in [0, 1] {
             let (_, raw) = workflow::expand(&index, "src/lib.rs", function, depth).unwrap();
@@ -327,7 +327,7 @@ fn control_cli_folds_mechanics_and_retains_summary_custody() {
         "pub fn run()->Result<(),()>{let x = first(&1)?; second(&x); Ok(())} fn first(_: &u8)->Result<u8,()>{Ok(1)} fn second(_: &u8){} fn other()->Result<(),()>{ first(&2)?; Ok(()) }",
     )]);
     fixture.write("profile.json", r#"{"schema":1,"source":["src/lib.rs"],"modules":[],"workflows":[{"name":"run","path":"src/lib.rs","function":"run"},{"name":"other","path":"src/lib.rs","function":"other"}]}"#);
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(["flow", "--root"])
         .arg(fixture.path())
         .args([

@@ -1,4 +1,4 @@
-use atlas_core::source::{ItemKind, RustSourceProjection, non_test_loc};
+use atlas_lib::source::{ItemKind, RustSourceProjection, non_test_loc};
 use std::path::Path;
 
 #[test]
@@ -45,7 +45,7 @@ fn restricted_visibility_preserves_its_written_target() {
 
 #[test]
 fn native_field_and_impl_facts_preserve_owner_and_visibility_syntax() {
-    use atlas_core::source::{Visibility, impl_trait, restricted_path, struct_fields};
+    use atlas_lib::source::{Visibility, impl_trait, restricted_path, struct_fields};
     let fields = struct_fields(
         "pub struct Bag<T> where T: Fn(u32) -> (u32, u32) {\n    pub(in crate::sealed) first: T,\n    #[cfg(any())] pub(super) second: u32,\n}",
     ).unwrap();
@@ -90,7 +90,7 @@ fn native_field_and_impl_facts_preserve_owner_and_visibility_syntax() {
 
 #[test]
 fn lexical_paths_accept_whitespace_around_separators() {
-    use atlas_core::source::impl_trait;
+    use atlas_lib::source::impl_trait;
     assert_eq!(
         impl_trait("impl std :: fmt :: Display for Error {").unwrap(),
         Some("Display")

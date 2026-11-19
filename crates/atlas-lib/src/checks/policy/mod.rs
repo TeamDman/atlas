@@ -39,7 +39,7 @@ pub struct Policy {
 }
 
 /// One crate's top-level modules in pipeline order, upstream first. `atlas
-/// stages` reports against it, and `atlas delta` refuses a candidate whose
+/// stages` reports against it, and `cargo atlas delta` refuses a candidate whose
 /// crate holds a forward edge, an unjudged path or an unnamed module.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -53,7 +53,7 @@ pub struct StageOrder {
 /// it reads whole; `input` are stages whose boundary items (what the stage's
 /// root module declares or re-exports) it reads; `debt` are reads past both,
 /// each row counting the distinct items it may name and the bead that
-/// retires it. A read in none of them is a new coupling, and `atlas delta`
+/// retires it. A read in none of them is a new coupling, and `cargo atlas delta`
 /// refuses it.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -67,7 +67,7 @@ pub struct StageReads {
 }
 
 /// A stage's debt rows. The published policy before item-level seams named
-/// debt stages bare; `atlas delta` still reads that baseline, and the
+/// debt stages bare; `cargo atlas delta` still reads that baseline, and the
 /// candidate's own policy must use rows.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]

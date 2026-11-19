@@ -1,6 +1,6 @@
 //! Cleanup follows the owned extraction even if a legacy reader changes its path.
 mod support;
-use atlas_core::revision::Revision;
+use atlas_lib::revision::Revision;
 use std::{fs, path::Path, process::Command};
 use support::Fixture;
 fn git(root: &Path, args: &[&str]) -> String {
@@ -95,7 +95,7 @@ fn independent_revision_leases_preserve_exact_source_and_clean_separately() {
 
 #[test]
 fn capture_verification_refuses_dirty_and_untracked_source_without_changing_it() {
-    use atlas_core::{discovery::snapshot_workspace, revision::GitStore};
+    use atlas_lib::{discovery::snapshot_workspace, revision::GitStore};
     let root = repository();
     let store = GitStore::discover(root.path()).unwrap();
     let revision = store.revision("HEAD").unwrap();
@@ -123,14 +123,14 @@ fn a_nested_workspace_cannot_borrow_its_ancestor_repository_identity() {
     let root = repository();
     let nested = root.path().join("nested");
     fs::create_dir(&nested).unwrap();
-    assert!(atlas_core::revision::GitStore::discover(&nested).is_err());
+    assert!(atlas_lib::revision::GitStore::discover(&nested).is_err());
 }
 #[test]
 fn compatibility_fields_cannot_relabel_the_owned_extraction() {
     let root = repository();
-    let store = atlas_core::revision::GitStore::discover(root.path()).unwrap();
+    let store = atlas_lib::revision::GitStore::discover(root.path()).unwrap();
     let mut revision = store.revision("HEAD").unwrap();
-    let snapshot = atlas_core::discovery::snapshot_workspace(root.path()).unwrap();
+    let snapshot = atlas_lib::discovery::snapshot_workspace(root.path()).unwrap();
     revision.commit = "different identity".into();
     assert!(store.verify_capture(&revision, &snapshot).is_err());
     assert_ne!(revision.commit_id(), revision.commit);
@@ -173,7 +173,7 @@ fn jj_resolution_and_verification_never_snapshot_working_edits() {
         "{}",
         String::from_utf8_lossy(&initialized.stderr)
     );
-    let store = atlas_core::revision::GitStore::discover(root.path()).unwrap();
+    let store = atlas_lib::revision::GitStore::discover(root.path()).unwrap();
     let id = store.current().unwrap();
     fs::write(root.path().join("src/lib.rs"), "pub struct Dirty;\n").unwrap();
     let revision = store.revision("@").unwrap();
@@ -182,7 +182,7 @@ fn jj_resolution_and_verification_never_snapshot_working_edits() {
         fs::read_to_string(revision.path().join("src/lib.rs")).unwrap(),
         "pub struct Captured;\n"
     );
-    let snapshot = atlas_core::discovery::snapshot_workspace(root.path()).unwrap();
+    let snapshot = atlas_lib::discovery::snapshot_workspace(root.path()).unwrap();
     assert!(store.verify_capture(&revision, &snapshot).is_err());
     assert_eq!(store.current().unwrap(), id);
     assert_eq!(
@@ -204,8 +204,8 @@ fn custody_compares_gits_executable_flag_not_untracked_permission_bits() {
         git(root.path(), &["diff", "--raw"]).is_empty(),
         "Git does not record this group-execute-bit change"
     );
-    let store = atlas_core::revision::GitStore::discover(root.path()).unwrap();
+    let store = atlas_lib::revision::GitStore::discover(root.path()).unwrap();
     let revision = store.revision("HEAD").unwrap();
-    let snapshot = atlas_core::discovery::snapshot_workspace(root.path()).unwrap();
+    let snapshot = atlas_lib::discovery::snapshot_workspace(root.path()).unwrap();
     store.verify_capture(&revision, &snapshot).unwrap();
 }

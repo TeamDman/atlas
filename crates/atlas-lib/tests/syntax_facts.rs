@@ -1,6 +1,6 @@
 //! Structural facts are independent of formatting; unknown syntax never becomes no work.
 mod support;
-use atlas_core::{
+use atlas_lib::{
     analysis::Analysis,
     checks::{self, policy::Policy, typed_errors},
     discovery::snapshot_workspace,
@@ -204,7 +204,7 @@ fn law_bom_shebang_and_comment_shaped_literals_keep_source_locations() {
 fn law_portable_capture_does_not_retain_thread_local_syn_nodes() {
     fn portable<T: Send + Sync>() {}
     portable::<Source>();
-    portable::<atlas_core::discovery::Snapshot>();
+    portable::<atlas_lib::discovery::Snapshot>();
 }
 
 #[test]

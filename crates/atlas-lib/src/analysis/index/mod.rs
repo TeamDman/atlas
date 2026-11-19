@@ -34,13 +34,13 @@ pub struct Boundary {
 /// to this index; borrowing accessors cannot reorder or replace their contents.
 ///
 /// ```compile_fail
-/// fn reorder(index: &mut atlas_core::source_index::Index) {
+/// fn reorder(index: &mut atlas_lib::source_index::Index) {
 ///     index.functions.reverse();
 /// }
 /// ```
 ///
 /// ```compile_fail
-/// fn reorder(index: &mut atlas_core::source_index::Index) {
+/// fn reorder(index: &mut atlas_lib::source_index::Index) {
 ///     index.functions().reverse();
 /// }
 /// ```

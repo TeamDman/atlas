@@ -14,7 +14,7 @@ pub fn project(
     query: &Query,
 ) -> Result<Diagram> {
     if matches!(query.view, View::Workflow | View::Program) {
-        return Err("use atlas flow for source workflow analysis".into());
+        return Err("use cargo atlas flow for source workflow analysis".into());
     }
     if architecture.is_some_and(|a| a.modules.is_empty()) {
         return Err(

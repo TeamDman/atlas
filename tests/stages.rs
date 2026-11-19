@@ -16,7 +16,7 @@ fn run(fixture: &Fixture, args: &[&str]) -> Output {
     run_question(fixture, "stages", args)
 }
 fn run_question(fixture: &Fixture, question: &str, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_atlas"))
+    Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .current_dir("/")
         .arg(question)
         .arg("--root")
@@ -154,7 +154,7 @@ fn policy_decoder_refuses_unknown_fields_and_preserves_source_families() {
     let output = run(&fixture, &["--policy", "architecture.toml", "--json"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field"));
-    let loaded = atlas_core::checks::policy::Policy::parse(POLICY).unwrap();
+    let loaded = atlas_lib::checks::policy::Policy::parse(POLICY).unwrap();
     assert_eq!(loaded.population.core, ["fixture"]);
     assert_eq!(loaded.stage_order[0].stages, ["load", "engine"]);
     assert!(loaded.external_references().is_empty());
@@ -230,7 +230,7 @@ fn competing_root_imports_remain_unjudged_without_cfg_resolution() {
 
 #[test]
 fn imports_keep_absolute_paths_and_are_retained_with_their_source_witnesses() {
-    let source = atlas_core::source::Source::of(
+    let source = atlas_lib::source::Source::of(
         std::path::Path::new("src/lib.rs"),
         "use ::external::{Thing as Local, other};\n".into(),
     )

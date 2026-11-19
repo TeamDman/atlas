@@ -3,7 +3,7 @@
 Atlas has two extension points:
 
 - A **declaration adapter** teaches Atlas how your project describes its own
-  structure, so `atlas overview` can draw it.
+  structure, so `cargo atlas overview` can draw it.
 - A **rendering backend** draws Atlas's diagrams in a new output format.
 
 To build tools on Atlas's analysis instead, see the [library guide](library.md).
@@ -39,7 +39,7 @@ understands exactly this format. Build it, then point `overview` at it:
 ```console
 $ cargo build --example pipeline-adapter     # in your clone of Atlas
 $ cd /tmp/tutorial                             # your copy of the tutorial
-$ atlas overview --adapter path/to/atlas/target/debug/examples/pipeline-adapter
+$ cargo atlas overview --adapter path/to/atlas/target/debug/examples/pipeline-adapter
 Representation contracts from declared stage APIs
 Contracts and direct fields, not runtime value flow.
 
@@ -55,7 +55,7 @@ A  REPRESENTATION CONTRACTS
 ...
 ```
 
-Compare this with `atlas representations` in the
+Compare this with `cargo atlas representations` in the
 [getting-started tour](getting-started.md#6-follow-a-type): there, `emit` was
 missing because it does not return a selected type. Here the adapter named
 `emit` as a stage's entry function, so it appears. Modules the adapter marks
@@ -87,11 +87,11 @@ trust.
 
 ### Write an adapter
 
-An adapter is a Rust binary that depends on the `atlas` package. Implement
+An adapter is a Rust binary that depends on the `cargo-atlas` package. Implement
 `adapter::ProjectAdapter` and call `adapter::serve` from `main`:
 
 ```rust,ignore
-use atlas::{
+use cargo_atlas::{
     Result,
     adapter::{self, ProjectAdapter, Request},
     architecture::{Architecture, Kind, Module},
@@ -122,12 +122,12 @@ fn main() {
 ```
 
 The full example is about 75 lines. A good way to start is to copy it into your
-own repository as a small binary crate that depends on `atlas` at a fixed
-commit:
+own repository as a small binary crate that depends on an exact
+`cargo-atlas` version:
 
 ```toml
 [dependencies]
-atlas = { git = "https://github.com/flowerornament/atlas.git", rev = "<commit>" }
+cargo-atlas = "=0.11.0"
 ```
 
 Useful pieces of the `Request`:
@@ -148,7 +148,7 @@ return an error rather than guessing.
 
 ### Protocol details
 
-You only need these if you write an adapter without the `atlas` crate.
+You only need these if you write an adapter without the `cargo-atlas` crate.
 
 - One JSON request on standard input, one JSON reply on standard output.
   Diagnostics go to standard error.
@@ -177,7 +177,7 @@ reshape a view into another family to claim support, such as turning a table
 into a graph with no edges.
 
 The built-in ASCII and Pele renderers both work this way. A custom renderer is
-used from the library; the `atlas` command only offers `--backend ascii` and
+used from the library; `cargo atlas` only offers `--backend ascii` and
 `--backend pele`.
 
 ## Limits

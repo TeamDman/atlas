@@ -1,6 +1,6 @@
 //! Explicit artifacts and evidence share one collision check before any writes.
 use super::{Backend, files::publish};
-use atlas::{
+use cargo_atlas::{
     Result,
     render::{Artifact, Theme, View},
 };

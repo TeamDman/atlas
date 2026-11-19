@@ -1,4 +1,4 @@
-use atlas_core::{discovery, review};
+use atlas_lib::{discovery, review};
 use cargo_metadata::MetadataCommand;
 mod support;
 use std::fs;
@@ -162,7 +162,7 @@ fn shape_diff_can_select_a_scope_removed_from_the_after_tree() {
 
 #[test]
 fn documentation_uses_supplied_citations_and_explicit_test_population() {
-    use atlas_core::{
+    use atlas_lib::{
         documentation::{self, Finding, HeaderPopulation, HeaderScope, Policy},
         population::{Population, TestSelection, VisibilitySelection},
         source::ItemKind,
@@ -262,7 +262,7 @@ fn shape_diff_refuses_a_scope_that_became_ambiguous() {
 
 #[test]
 fn documentation_distinguishes_nested_coverage_and_rustdoc_attribute_limits() {
-    use atlas_core::{
+    use atlas_lib::{
         documentation::{self, Finding, HeaderPopulation, HeaderScope, Policy},
         population::{Population, TestSelection, VisibilitySelection},
         source::ItemKind,
@@ -306,7 +306,7 @@ fn documentation_distinguishes_nested_coverage_and_rustdoc_attribute_limits() {
 
 #[test]
 fn qualified_capture_keeps_bytes_and_cargo_context_after_external_changes() {
-    use atlas_core::analysis::Analysis;
+    use atlas_lib::analysis::Analysis;
     let fixture = fixture();
     fs::write(fixture.path().join("scripts/model.rs"), "pub struct Token;\npub fn make() -> Token { Token }\npub fn caller() -> Token { make() }\n").expect("qualified source");
     let mut metadata = MetadataCommand::new()
@@ -344,7 +344,7 @@ fn qualified_capture_keeps_bytes_and_cargo_context_after_external_changes() {
         .expect("expand captured external target");
     assert_eq!(flow.function, "caller");
     assert!(diagram.edges.iter().any(|edge| edge.evidence
-        == atlas_core::diagram::EdgeEvidence::SourceOrder
+        == atlas_lib::diagram::EdgeEvidence::SourceOrder
         && edge.label.as_deref() == Some("call")));
     assert!(diagram.edges.iter().any(|edge| {
         edge.label

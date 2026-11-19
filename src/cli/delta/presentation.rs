@@ -1,10 +1,10 @@
 //! Native gate-compatible projection and human display; no source inspection here.
 use super::{Stats, difference};
-use atlas::Result;
-use atlas_core::checks::{
+use atlas_lib::checks::{
     delta,
     policy::{Policy, Status},
 };
+use cargo_atlas::Result;
 use serde_json::{Value, json};
 use std::fmt::Write as _;
 fn verdict(status: Status) -> &'static str {
@@ -91,7 +91,7 @@ pub(super) fn json(
             "sha256": sha256,
             "raises": report.raises,
         },
-        "command": format!("atlas delta {} --candidate {}", report.basis.baseline, report.basis.candidate),
+        "command": format!("cargo atlas delta {} --candidate {}", report.basis.baseline, report.basis.candidate),
         "size": size,
         "shape": shape,
         "coupling": coupling,
@@ -115,7 +115,7 @@ pub(super) fn display(
     let before = &report.basis.baseline;
     let after = &report.basis.candidate;
     let mut out = format!(
-        "atlas delta {} -> {} · {elapsed}ms",
+        "cargo atlas delta {} -> {} · {elapsed}ms",
         &before[..12.min(before.len())],
         &after[..12.min(after.len())]
     );
@@ -149,7 +149,7 @@ pub(super) fn display(
         out.push_str("\nsize      unavailable\nshape     unavailable");
     }
     if let Some(tree) = &report.concentration {
-        let over = |row: &atlas_core::checks::concentration::DebtSummary| -> Result<_> {
+        let over = |row: &atlas_lib::checks::concentration::DebtSummary| -> Result<_> {
             Ok(format!(
                 "{} lines over {} ({})",
                 row.over_after,

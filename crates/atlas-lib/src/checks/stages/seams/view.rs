@@ -1,4 +1,4 @@
-//! What `atlas seams` prints and what `atlas delta` reports of a reading.
+//! What `cargo atlas seams` prints and what `cargo atlas delta` reports of a reading.
 
 use std::collections::{BTreeMap, BTreeSet};
 

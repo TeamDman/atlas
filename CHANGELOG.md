@@ -1,8 +1,29 @@
 # Changelog
 
-Atlas has two packages: the `atlas` CLI and library, and `atlas-core`. Versions
-below name the package they apply to. Neither is published to crates.io yet;
-depend on an exact Git revision.
+Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
+library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
+`atlas-core`. Versions below name the package they apply to.
+
+## cargo-atlas 0.11.0 / atlas-lib 0.4.0
+
+The packages are renamed for crates.io, where `atlas` and `atlas-core` were
+already taken, and the command becomes a Cargo subcommand. To migrate:
+
+| Before | After |
+| --- | --- |
+| `cargo install --git … atlas` | `cargo install --locked cargo-atlas` |
+| binary `atlas`, run as `atlas <command>` | binary `cargo-atlas`, run as `cargo atlas <command>` (there is no `atlas` binary) |
+| package `atlas`, `use atlas::…` | package `cargo-atlas`, `use cargo_atlas::…` |
+| package `atlas-core`, `use atlas_core::…` | package `atlas-lib`, `use atlas_lib::…` |
+| delta JSON `"command": "atlas delta …"` | `"command": "cargo atlas delta …"` |
+
+- **Breaking:** help, examples, report headings and suggested commands say
+ `cargo atlas`. The delta report's `command` field names the command to re-run,
+ so it uses the binary that now exists.
+- **Breaking:** declaration adapters depend on `cargo-atlas` instead of `atlas`.
+- Both packages can be published to crates.io. Their `include` lists are
+ anchored to the package root, so untracked or linked directories in a working
+ copy are never packaged.
 
 ## atlas 0.10.0
 

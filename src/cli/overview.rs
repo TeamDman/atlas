@@ -1,6 +1,6 @@
 //! Ask an explicit declaration adapter to interpret source constants, then project them.
 use crate::cli::output::artifact as artifact_output;
-use atlas::{
+use cargo_atlas::{
     Result,
     adapter::{self, Request, Snapshot},
     discovery, overview,
@@ -28,7 +28,7 @@ pub(crate) fn run(
 ) -> Result<()> {
     let snapshot = discovery::snapshot_metadata(metadata)?;
     let graph = snapshot.graph();
-    let facts = atlas_core::analysis::Analysis::new(&snapshot)?.representations()?;
+    let facts = atlas_lib::analysis::Analysis::new(&snapshot)?.representations()?;
     let input = Request::new(
         Snapshot::from_facts(graph, &facts, &options.declarations)?,
         options.declarations,

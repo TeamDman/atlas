@@ -1,5 +1,5 @@
 //! Physical inventory and contextual name resolution are different observations.
-use atlas_core::{
+use atlas_lib::{
     analysis::Analysis,
     discovery,
     population::{FileSelection, TestSelection},
@@ -52,22 +52,22 @@ fn shared_package_roots_keep_contexts_and_one_physical_report() {
     assert_eq!(facts.constructors.len(), 1);
     assert_eq!(facts.references.len(), 2);
     for level in [
-        atlas_core::diagram::Level::Files,
-        atlas_core::diagram::Level::Declarations,
+        atlas_lib::diagram::Level::Files,
+        atlas_lib::diagram::Level::Declarations,
     ] {
-        let diagram = atlas_core::diagram::project(
+        let diagram = atlas_lib::diagram::project(
             snapshot.graph(),
             None,
-            &atlas_core::diagram::Query {
+            &atlas_lib::diagram::Query {
                 focus: None,
                 level,
-                view: atlas_core::diagram::View::Types,
+                view: atlas_lib::diagram::View::Types,
             },
         )
         .unwrap();
         diagram.validate().unwrap();
         assert_eq!(diagram.inventory, ["shared.rs"]);
-        if level == atlas_core::diagram::Level::Files {
+        if level == atlas_lib::diagram::Level::Files {
             assert_eq!(diagram.nodes.len(), 1);
         } else {
             assert!(
@@ -96,7 +96,7 @@ fn targets_sharing_one_root_do_not_overwrite_each_other() {
         ("src/shared.rs", "pub fn make() {}\nfn main() { make(); }\n"),
     ]);
     let snapshot = discovery::snapshot_workspace(fixture.path()).expect("fixture snapshot");
-    let architecture = atlas_core::architecture::Architecture {
+    let architecture = atlas_lib::architecture::Architecture {
         schema: 1,
         provenance: vec![],
         modules: vec![],
@@ -383,15 +383,15 @@ fn lexical_and_ast_populations_agree_on_commented_stacked_and_multiline_gates() 
     let snapshot = discovery::snapshot_workspace(fixture.path()).expect("fixture snapshot");
     let file = snapshot.physical_file("src/lib.rs").unwrap();
     let source = snapshot.source_facts("src/lib.rs").unwrap();
-    let population = atlas_core::population::Population {
+    let population = atlas_lib::population::Population {
         tests: TestSelection::Production,
-        visibility: atlas_core::population::VisibilitySelection::All,
+        visibility: atlas_lib::population::VisibilitySelection::All,
     };
     let lexical: Vec<_> = source
         .outline()
         .iter()
         .filter(|item| {
-            item.kind == atlas_core::source::ItemKind::Fn && population.admits(file, source, item)
+            item.kind == atlas_lib::source::ItemKind::Fn && population.admits(file, source, item)
         })
         .map(|item| item.name.as_str())
         .collect();
@@ -422,10 +422,10 @@ fn explicit_file_workflows_can_still_select_test_bodies() {
         ),
     ]);
     let workflow =
-        atlas_core::workflow::read(fixture.path(), "src/lib.rs", "tests::witness").unwrap();
+        atlas_lib::workflow::read(fixture.path(), "src/lib.rs", "tests::witness").unwrap();
     assert_eq!(workflow.calls[0].spelling, "observe");
     assert_eq!(
-        atlas_core::workflow::read_file(fixture.path(), "src/lib.rs")
+        atlas_lib::workflow::read_file(fixture.path(), "src/lib.rs")
             .unwrap()
             .functions
             .len(),
@@ -572,13 +572,13 @@ fn repeated_relationship_readings_deduplicate_witnesses_without_merging_packages
                 .iter()
                 .any(|d| d.package.as_deref() == Some("right"))
         );
-        atlas_core::relationships::derive(&mut graph);
+        atlas_lib::relationships::derive(&mut graph);
     }
 }
 
 #[test]
 fn indexed_call_positions_are_local_and_out_of_range_is_explicit() {
-    use atlas_core::{architecture::Architecture, source_index::Target};
+    use atlas_lib::{architecture::Architecture, source_index::Target};
     let fixture = Fixture::new(&[
         (
             "Cargo.toml",

@@ -9,7 +9,7 @@ fn fixture() -> Fixture {
 }
 fn refuses(f: &Fixture, args: &[&str], protected: &str) {
     let before = fs::read(f.path().join(protected)).expect("output fixture operation");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(args)
         .arg("--root")
         .arg(f.path())
@@ -136,7 +136,7 @@ fn output_alias_to_source_is_refused() {
 #[test]
 fn ordinary_artifacts_still_write_with_their_evidence() {
     let f = fixture();
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(["map", "--out", "docs/view.txt", "--root"])
         .arg(f.path())
         .output()
@@ -166,7 +166,7 @@ fn writing_an_uninspected_hardlink_alias_cannot_change_source_bytes() {
     let f = fixture();
     let before = fs::read(f.path().join("src/lib.rs")).expect("source");
     fs::hard_link(f.path().join("src/lib.rs"), f.path().join("alias.txt")).expect("hardlink");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(["map", "--out", "alias.txt", "--root"])
         .arg(f.path())
         .output()
@@ -209,7 +209,7 @@ fn expanded_workflow_protects_captured_callee_source() {
 #[test]
 fn output_and_evidence_directory_cannot_be_the_same_path() {
     let f = fixture();
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args([
             "map",
             "--out",
@@ -229,7 +229,7 @@ fn output_and_evidence_directory_cannot_be_the_same_path() {
 fn existing_directory_destination_refuses_before_evidence() {
     let f = fixture();
     fs::create_dir(f.path().join("view.txt")).expect("directory");
-    let result = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args(["map", "--out", "view.txt", "--root"])
         .arg(f.path())
         .output()
@@ -245,7 +245,7 @@ fn artifact_permissions_follow_create_defaults_and_preserve_existing_mode() {
     let f = fixture();
     f.write("control.txt", "control");
     let invoke = || {
-        Command::new(env!("CARGO_BIN_EXE_atlas"))
+        Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
             .args(["map", "--out", "view.txt", "--root"])
             .arg(f.path())
             .output()
@@ -284,7 +284,7 @@ fn unexpanded_workflow_protects_other_project_sources_without_parsing_their_ast(
         ],
         "src/transformer.rs",
     );
-    let output = Command::new(env!("CARGO_BIN_EXE_atlas"))
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .args([
             "flow",
             "--path",

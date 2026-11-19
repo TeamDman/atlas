@@ -1,6 +1,6 @@
 //! Revision review over one immutable-before/current-after snapshot pair.
 use super::json;
-use atlas::{Result, discovery, revision::Revision};
+use cargo_atlas::{Result, discovery, revision::Revision};
 use clap::Args;
 use std::path::Path;
 
@@ -52,7 +52,7 @@ pub(crate) fn run(
     match question {
         Question::Shape => {
             let report =
-                atlas_core::review::diff(&before_snapshot, &after_snapshot, &options.scope)?;
+                atlas_lib::review::diff(&before_snapshot, &after_snapshot, &options.scope)?;
             if options.json {
                 print_json(&commit, question, &report)?;
             } else {
@@ -75,7 +75,7 @@ pub(crate) fn run(
             }
         }
         Question::Visibility => {
-            let report = atlas_core::review::moves::visibility(
+            let report = atlas_lib::review::moves::visibility(
                 &before_snapshot,
                 &after_snapshot,
                 Some(&options.scope),
@@ -106,7 +106,7 @@ pub(crate) fn run(
             }
         }
         Question::Moved => {
-            let report = atlas_core::review::moves::moved(
+            let report = atlas_lib::review::moves::moved(
                 &before_snapshot,
                 &after_snapshot,
                 Some(&options.scope),
@@ -166,7 +166,7 @@ fn print_json(commit: &str, question: Question, report: &impl serde::Serialize) 
     );
     Ok(())
 }
-fn pair(label: &str, row: &atlas_core::review::moves::Pair) {
+fn pair(label: &str, row: &atlas_lib::review::moves::Pair) {
     println!(
         "{label}: {} {} {} · {}:{} ({}) -> {}:{} ({}){}",
         row.crate_name,
@@ -192,12 +192,12 @@ fn captures(
     reference: &str,
 ) -> Result<(
     String,
-    atlas_core::discovery::Snapshot,
-    atlas_core::discovery::Snapshot,
+    atlas_lib::discovery::Snapshot,
+    atlas_lib::discovery::Snapshot,
 )> {
     let (commit, before) = {
         let revision = Revision::read(root, reference)?;
-        let snapshot = atlas_core::discovery::snapshot_workspace(revision.path())?;
+        let snapshot = atlas_lib::discovery::snapshot_workspace(revision.path())?;
         (revision.commit_id().to_owned(), snapshot)
     };
     let after = discovery::snapshot_metadata(metadata)?;
@@ -205,8 +205,8 @@ fn captures(
 }
 #[derive(serde::Serialize)]
 struct DeclarationReview {
-    shapes: atlas_core::review::ShapeDiff,
-    items: atlas_core::queries::navigation::DeclarationDiff,
+    shapes: atlas_lib::review::ShapeDiff,
+    items: atlas_lib::queries::navigation::DeclarationDiff,
 }
 pub(crate) fn diff(
     root: &Path,
@@ -224,11 +224,11 @@ pub(crate) fn diff(
     let population = options
         .population
         .selected()
-        .unwrap_or(atlas_core::population::VisibilitySelection::All);
-    let prior = atlas_core::queries::navigation::Navigation::new(&before, population)?;
-    let current = atlas_core::queries::navigation::Navigation::new(&after, population)?;
+        .unwrap_or(atlas_lib::population::VisibilitySelection::All);
+    let prior = atlas_lib::queries::navigation::Navigation::new(&before, population)?;
+    let current = atlas_lib::queries::navigation::Navigation::new(&after, population)?;
     let report = DeclarationReview {
-        shapes: atlas_core::review::diff(&before, &after, &args.scope)?,
+        shapes: atlas_lib::review::diff(&before, &after, &args.scope)?,
         items: current.declaration_diff(&prior, &args.scope, options.graph)?,
     };
     if args.json {
@@ -242,7 +242,7 @@ pub(crate) fn diff(
         println!("module shape: {}", module.file);
     }
     for change in &report.items.declarations {
-        use atlas_core::queries::navigation::ChangedDeclaration;
+        use atlas_lib::queries::navigation::ChangedDeclaration;
         let (label, version) = match change {
             ChangedDeclaration::Added { after } => ("added", after),
             ChangedDeclaration::Removed { before } => ("removed", before),
@@ -313,8 +313,8 @@ pub(super) fn source_review(
     args: &SourceReviewArgs,
     question: SourceQuestion,
 ) -> Result<()> {
-    let snapshot = atlas_core::discovery::snapshot_metadata(metadata)?;
-    let report = atlas_core::review::outline(
+    let snapshot = atlas_lib::discovery::snapshot_metadata(metadata)?;
+    let report = atlas_lib::review::outline(
         &snapshot,
         args.scope
             .as_deref()

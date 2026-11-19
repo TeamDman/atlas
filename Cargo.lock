@@ -53,21 +53,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "atlas"
-version = "0.10.0"
-dependencies = [
- "atlas-core",
- "cargo_metadata",
- "clap",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
-name = "atlas-core"
-version = "0.3.0"
+name = "atlas-lib"
+version = "0.4.0"
 dependencies = [
  "cargo_metadata",
  "clap",
@@ -101,6 +88,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbad30e4b4c14a39e3cc8aed085a12a327257c316619c93581e017bc52be591"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "cargo-atlas"
+version = "0.11.0"
+dependencies = [
+ "atlas-lib",
+ "cargo_metadata",
+ "clap",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
 ]
 
 [[package]]

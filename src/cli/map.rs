@@ -3,7 +3,7 @@ use super::{
     output::{self, RenderOptions, protected_inputs, render},
     profile::architecture,
 };
-use atlas::{
+use cargo_atlas::{
     Result,
     diagram::{self, Level, Query, View},
     discovery,

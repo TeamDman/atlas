@@ -30,7 +30,7 @@ current directory. To read a project somewhere else, add `--root path/to/project
 ## 1. See what the project contains
 
 ```console
-$ atlas census
+$ cargo atlas census
 workspace: 5 files (0 test-only), 11 production declarations
   Const: 1
   Enum: 1
@@ -54,7 +54,7 @@ different kinds of evidence Atlas uses.
 ## 2. Look up a name
 
 ```console
-$ atlas name Tree
+$ cargo atlas name Tree
 Tree: 1 declaration site
 
 src/parse.rs:4:Tree [Pub Struct]
@@ -71,7 +71,7 @@ this one definition ("candidate-unique"). "Outgoing" counts the names that
 Now try a name that is used twice:
 
 ```console
-$ atlas name check
+$ cargo atlas name check
 check: 2 declaration sites (ambiguous)
 
 src/check.rs:10:check [Pub Fn]
@@ -93,7 +93,7 @@ Add `--relations` to see the mentions themselves.
 ## 3. Look inside a file
 
 ```console
-$ atlas module src/check.rs
+$ cargo atlas module src/check.rs
 src/check.rs: 1 physical files, 4 incident lexical relationships
 
 src/check.rs (2 production declarations)
@@ -110,7 +110,7 @@ lexical relationships" are the name mentions that start or end in this file.
 including every branch.
 
 ```console
-$ atlas flow --path src/main.rs --function main
+$ cargo atlas flow --path src/main.rs --function main
 main
 main (src/main.rs:4)
 
@@ -141,7 +141,7 @@ wherever you point `--out`. It never changes your source files.
 ## 5. Draw how files depend on each other
 
 ```console
-$ atlas dependencies --relation calls
+$ cargo atlas dependencies --relation calls
 Source Calls: src
 5 selected files; 5 nodes; 2 crossing groups; ...
 
@@ -172,7 +172,7 @@ Try `--relation signatures` to see which files use another file's types in
 their function signatures:
 
 ```console
-$ atlas dependencies --relation signatures
+$ cargo atlas dependencies --relation signatures
 ...
 RELATIONSHIPS
   [check.rs] --signature names: check.tree : Tree (1 sites)--> [parse.rs]
@@ -189,7 +189,7 @@ that names the two main types. `representations` shows which functions take
 and return them:
 
 ```console
-$ atlas representations --query pipeline.json --panel contracts
+$ cargo atlas representations --query pipeline.json --panel contracts
 From text to output
 Contracts and direct fields, not runtime value flow.
 
@@ -226,7 +226,7 @@ git commit -am "Limit program length; narrow Tree.words"
 Now compare against the previous commit (`HEAD~1`; in jj, use `@-`):
 
 ```console
-$ atlas diff HEAD~1
+$ cargo atlas diff HEAD~1
 Module shape against a0914cf... (current source)
 src/check.rs
   before: 15 non-test lines; 2 top-level items; largest block 6
@@ -235,11 +235,11 @@ src/parse.rs
   before: 13 non-test lines; 2 top-level items; largest block 5
   after: 13 non-test lines; 2 top-level items; largest block 5
 
-$ atlas moved HEAD~1
+$ cargo atlas moved HEAD~1
 Token bodies against a0914cf...: 7 exact; 0 rerooted; 1 changed; 0 only before; 0 only after; 0 unreadable ...
 changed: tutorial item check · src/check.rs:10 (pub) -> src/check.rs:10 (pub)
 
-$ atlas visibility HEAD~1
+$ cargo atlas visibility HEAD~1
 Written visibility against a0914cf...: 0 widened; 0 rescoped; 1 narrowed; 3 ambiguous keys
 narrowed: tutorial field Tree.words · src/parse.rs:5 (pub) -> src/parse.rs:5 (pub(crate))
 ```
@@ -278,7 +278,7 @@ git commit -am "emit reads the tree directly"
 ```
 
 ```console
-$ atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
+$ cargo atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
 ...
 verdict   REFUSE
 refusal   stage interface `tutorial`: src/emit.rs:3 emit reads parse (`crate::parse::Tree`), which its stage_reads row does not list; read it through the stage's input, or add `parse` to the row's reads with the reason in a comment
@@ -297,9 +297,9 @@ each check.
 
 ## Next steps
 
-- Run `atlas census` and `atlas dependencies --relation calls` in your own
+- Run `cargo atlas census` and `cargo atlas dependencies --relation calls` in your own
   project.
 - Read [how Atlas works](concepts.md) to understand scopes, populations and the
   different kinds of evidence.
 - Browse the [diagrams](diagrams.md) to see every view.
-- Run `atlas --help` for the full list of commands.
+- Run `cargo atlas --help` for the full list of commands.

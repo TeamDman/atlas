@@ -1,7 +1,7 @@
 # How Atlas works
 
 This page explains the ideas that every Atlas command shares. Once you know
-them, `atlas <command> --help` tells you the rest. A [glossary](#glossary) at
+them, `cargo atlas <command> --help` tells you the rest. A [glossary](#glossary) at
 the end defines the words Atlas uses in its output.
 
 ## Reading a project
@@ -94,9 +94,9 @@ qualified views. Each report says which rule it used.
 Review commands compare your current code with an earlier commit:
 
 ```sh
-atlas diff HEAD~1                 # Git: the previous commit
-atlas diff @-                     # jj: the previous change
-atlas compare --before v1.2.0 --after v1.3.0
+cargo atlas diff HEAD~1                 # Git: the previous commit
+cargo atlas diff @-                     # jj: the previous change
+cargo atlas compare --before v1.2.0 --after v1.3.0
 ```
 
 Atlas turns the name you give into an exact commit, then copies that commit's
@@ -137,7 +137,7 @@ no half-finished image is left behind.
 | Draw diagrams | `dependencies`, `representations`, `flow`, `overview`, `program`, `map` |
 | Check architecture | `delta`, `stages`, `policy`, `seams` |
 
-`atlas --help` lists every command. Each command's `--help` ends with a short
+`cargo atlas --help` lists every command. Each command's `--help` ends with a short
 note: the question it answers, what it counts or what evidence it uses, and an
 example.
 

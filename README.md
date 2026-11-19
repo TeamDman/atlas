@@ -20,10 +20,10 @@ answer points to the file and line it came from, so you can check it yourself.
 Here is Atlas looking at its own source:
 
 ```console
-$ atlas name Snapshot
+$ cargo atlas name Snapshot
 Snapshot: 4 declaration sites (ambiguous)
 
-crates/atlas-core/src/source/discovery/mod.rs:38:Snapshot [Pub Struct]
+crates/atlas-lib/src/source/discovery/mod.rs:38:Snapshot [Pub Struct]
   Source bytes and their derived lexical graph from one discovery pass.
   4 outgoing, 42 incoming candidate-unique, 0 incoming ambiguous
   pub struct Snapshot {
@@ -47,10 +47,10 @@ of changed lines. Atlas compares every function and type body with the earlier
 commit and sorts them:
 
 ```console
-$ atlas moved HEAD~4
+$ cargo atlas moved HEAD~4
 Token bodies against d3e4e42d4a95…: 1186 exact; 0 rerooted; 10 changed; 0 only before; 0 only after
 changed: atlas method Comparison::text · src/views/comparison.rs:271
-changed: atlas-core item header_counts · crates/atlas-core/src/checks/concentration/ratchets.rs:559
+changed: atlas-lib item header_counts · crates/atlas-lib/src/checks/concentration/ratchets.rs:559
 ...
 ```
 
@@ -60,7 +60,7 @@ they're formatted. You only need to review the 10 that changed.
 ### See which files depend on which
 
 ```console
-$ atlas dependencies --relation calls
+$ cargo atlas dependencies --relation calls
 RELATIONSHIPS
   [main.rs] --calls: main calls check (1 sites)--> [check.rs]
   [main.rs] --calls: main calls parse (1 sites)--> [parse.rs]
@@ -68,7 +68,7 @@ RELATIONSHIPS
 
 Add `--backend pele` to draw the same thing as an SVG image. Atlas can also
 draw which functions produce and consume a type, and every path a function can
-take. See [diagrams](docs/diagrams.md).
+take. See [diagrams](https://github.com/flowerornament/atlas/blob/main/docs/diagrams.md).
 
 ### Catch a change that breaks your rules
 
@@ -78,8 +78,8 @@ each change against those rules. Here someone made the output code use the
 parser directly:
 
 ```console
-$ atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
-atlas delta dbb03fd281f2 -> 7e0ff3f307aa · 427ms
+$ cargo atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
+cargo atlas delta dbb03fd281f2 -> 7e0ff3f307aa · 427ms
 size      +4 core token-lines · 45/200 · 9.8 tokens/line
 ...
 surface   +1 public declarations · tutorial 11/20
@@ -91,7 +91,7 @@ refusal   stage interface `tutorial`: src/emit.rs:3 emit reads parse (`crate::pa
 
 The refusal names the exact line and gives you two ways to fix it. In CI this
 fails the build, so the rule holds without anyone having to remember it.
-[Architecture checks](docs/checks.md) explains how to write rules, including
+[Architecture checks](https://github.com/flowerornament/atlas/blob/main/docs/checks.md) explains how to write rules, including
 what `--citation-markers` is for.
 
 ## Is it for you?
@@ -105,21 +105,18 @@ the answer in a script, a review or a CI job:
 - You want structural rules ("this crate stays under 2,000 lines", "the parser
   never uses the code generator") checked automatically instead of in review.
 - You're building your own tooling and want a Rust library that reads a
-  workspace for you. See [using the library](docs/library.md).
+  workspace for you. See [using the library](https://github.com/flowerornament/atlas/blob/main/docs/library.md).
 
 ## Install
 
 You need Rust 1.99.1 or newer.
 
 ```sh
-cargo install --locked --git https://github.com/flowerornament/atlas.git atlas
-atlas --version    # should print "atlas 0.10.0" or later
+cargo install --locked cargo-atlas
+cargo atlas --version    # should print "cargo-atlas 0.11.0" or later
 ```
 
-If `atlas --version` prints something else, a different program called
-`atlas` comes first on your `PATH`. For example, Nim's package manager has the
-same name. Run `~/.cargo/bin/atlas` instead, or put `~/.cargo/bin` earlier in
-your `PATH`.
+Atlas is a Cargo subcommand: run it as `cargo atlas` from inside your project.
 
 Some features need more tools:
 
@@ -129,8 +126,10 @@ Some features need more tools:
   [jj](https://github.com/jj-vcs/jj), Atlas also needs `jj`, and you name
   commits the jj way (`@-` instead of `HEAD~1`).
 
-To get the same Atlas every time, for example in CI, add `--rev <commit>` to
-the install command.
+To get the same Atlas every time, for example in CI, add `--version <version>`
+to the install command. To try unreleased changes, install from the
+repository instead: `cargo install --locked --git
+https://github.com/flowerornament/atlas.git cargo-atlas`.
 
 ## Try it in five minutes
 
@@ -142,19 +141,19 @@ git clone https://github.com/flowerornament/atlas.git
 cp -r atlas/examples/tutorial /tmp/tutorial
 cd /tmp/tutorial
 
-atlas census                 # what does this project contain?
-atlas name Tree              # where is Tree defined, and what uses it?
-atlas module src/check.rs    # what is in this file?
-atlas dependencies --relation calls               # which files call which?
-atlas flow --path src/main.rs --function main     # what paths can main take?
+cargo atlas census                 # what does this project contain?
+cargo atlas name Tree              # where is Tree defined, and what uses it?
+cargo atlas module src/check.rs    # what is in this file?
+cargo atlas dependencies --relation calls               # which files call which?
+cargo atlas flow --path src/main.rs --function main     # what paths can main take?
 ```
 
-[Getting started](docs/getting-started.md) walks you through it step by step,
+[Getting started](https://github.com/flowerornament/atlas/blob/main/docs/getting-started.md) walks you through it step by step,
 ending with the rule check shown above.
 
 On your own project, run the same commands from its root directory, or pass
 `--root path/to/project`. Add `--json` to any command for machine-readable
-output, and run `atlas <command> --help` to see what a command counts.
+output, and run `cargo atlas <command> --help` to see what a command counts.
 
 ## What Atlas can't see
 
@@ -172,17 +171,17 @@ missing answer is reported as unknown, never as "nothing found".
 
 ## Documentation
 
-- [Getting started](docs/getting-started.md): a guided tour of the example project
-- [How Atlas works](docs/concepts.md): the ideas behind every command, and a glossary
-- [Diagrams](docs/diagrams.md): each kind of diagram and how to read it
-- [Architecture checks](docs/checks.md): writing rules for your project and checking them
-- [Using the library](docs/library.md): calling Atlas from your own Rust code
-- [Extending Atlas](docs/extensions.md): teaching Atlas your project's conventions
-- [Contributing](CONTRIBUTING.md), [code architecture](ARCHITECTURE.md) and the
-  [changelog](CHANGELOG.md)
+- [Getting started](https://github.com/flowerornament/atlas/blob/main/docs/getting-started.md): a guided tour of the example project
+- [How Atlas works](https://github.com/flowerornament/atlas/blob/main/docs/concepts.md): the ideas behind every command, and a glossary
+- [Diagrams](https://github.com/flowerornament/atlas/blob/main/docs/diagrams.md): each kind of diagram and how to read it
+- [Architecture checks](https://github.com/flowerornament/atlas/blob/main/docs/checks.md): writing rules for your project and checking them
+- [Using the library](https://github.com/flowerornament/atlas/blob/main/docs/library.md): calling Atlas from your own Rust code
+- [Extending Atlas](https://github.com/flowerornament/atlas/blob/main/docs/extensions.md): teaching Atlas your project's conventions
+- [Contributing](https://github.com/flowerornament/atlas/blob/main/CONTRIBUTING.md), [code architecture](https://github.com/flowerornament/atlas/blob/main/ARCHITECTURE.md) and the
+  [changelog](https://github.com/flowerornament/atlas/blob/main/CHANGELOG.md)
 
 ## License
 
-Atlas is available under either the [MIT](LICENSE-MIT) or the
-[Apache 2.0](LICENSE-APACHE) license, at your option. The bundled
-[Pele](vendor/pele/README.md) diagram renderer is MIT licensed.
+Atlas is available under either the [MIT](https://github.com/flowerornament/atlas/blob/main/LICENSE-MIT) or the
+[Apache 2.0](https://github.com/flowerornament/atlas/blob/main/LICENSE-APACHE) license, at your option. The bundled
+[Pele](https://github.com/flowerornament/atlas/blob/main/vendor/pele/README.md) diagram renderer is MIT licensed.

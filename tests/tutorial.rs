@@ -36,7 +36,7 @@ fn tutorial() -> tempfile::TempDir {
 }
 
 fn atlas(root: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_atlas"))
+    Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
         .current_dir(root)
         .args(args)
         .output()

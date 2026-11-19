@@ -1,5 +1,5 @@
 //! One preflight for artifact, companion and evidence writes; no input is an output.
-use atlas::Result;
+use cargo_atlas::Result;
 use std::{
     fs,
     io::Write,

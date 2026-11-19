@@ -1,10 +1,10 @@
 //! Read authored policy, observe required inputs, validate, then print the verdict.
-use atlas::{Result, discovery};
-use atlas_core::{
+use atlas_lib::{
     analysis::Analysis,
     checks::policy::{self, Policy, Status},
     population::FileSelection,
 };
+use cargo_atlas::{Result, discovery};
 use clap::Args;
 use std::{
     fs,

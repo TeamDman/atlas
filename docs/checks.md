@@ -78,7 +78,7 @@ The [policy reference](#policy-reference) below explains every section. First,
 check that the policy is valid:
 
 ```console
-$ atlas policy --policy .config/architecture.toml
+$ cargo atlas policy --policy .config/architecture.toml
 policy inputs: PASS · 1 core crates · 1 authority homes
 ```
 
@@ -94,8 +94,8 @@ Suppose someone adds a function to `emit.rs` that uses `Tree` from `parse`
 directly. The policy only lets `emit` use `check`:
 
 ```console
-$ atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
-atlas: atlas delta 08811eb74b74 -> 81668df96124 · 376ms
+$ cargo atlas delta HEAD~1 --policy .config/architecture.toml --citation-markers docs/
+atlas: cargo atlas delta 08811eb74b74 -> 81668df96124 · 376ms
 size      +4 core token-lines · 45/200 · 9.8 tokens/line
 shape     src/emit.rs::emit block 3->5 · items 1->2 · 1 touched · DENSER
 tree      entry files 0 lines over 300 (0) · files 0 lines over 2000 (0) · 0 ruled names · 0 aliases · 2 uncited roots
@@ -133,7 +133,7 @@ project, so you tell it with `--citation-markers`. Without that option, the
 verdict is `UNAVAILABLE`:
 
 ```console
-$ atlas delta HEAD~1 --policy .config/architecture.toml
+$ cargo atlas delta HEAD~1 --policy .config/architecture.toml
 ...
 verdict   UNAVAILABLE
 unavailable concentration.before.source.src/lib.rs: required project header-citation observation unavailable
@@ -165,7 +165,7 @@ time.
 If `parse.rs` used something from `emit`, `stages` would report:
 
 ```console
-$ atlas stages --policy .config/architecture.toml --scope tutorial
+$ cargo atlas stages --policy .config/architecture.toml --scope tutorial
 stage order `tutorial`: src/parse.rs:2 parse → emit names `crate::emit::emit`, a later stage; move the type to the stage that produces it, or amend the stage_order row if the order is wrong; never alias it
 1 selected packages; no complete project policy verdict
 ```
@@ -181,8 +181,8 @@ pass, because it checks only part of the policy. Use `delta` to gate changes.
 ## Checking documentation with `comments --audit`
 
 ```sh
-atlas comments --audit --scope src --population pub-ish
-atlas comments --audit --citation-markers docs/,RFC- --json
+cargo atlas comments --audit --scope src --population pub-ish
+cargo atlas comments --audit --citation-markers docs/,RFC- --json
 ```
 
 This lists files with no `//!` header, headers that cite nothing, and items
@@ -315,7 +315,7 @@ header_uncited = { tutorial = 2 }
   exports, who may build shared types, and how far tests reach into other
   stages. This needs a [project wrapper](#project-wrappers).
 
-The Rust documentation for `atlas_core::checks::policy::Policy` describes each
+The Rust documentation for `atlas_lib::checks::policy::Policy` describes each
 field in more detail.
 
 ## Project wrappers
@@ -331,7 +331,7 @@ called a **project wrapper**:
   commit citations,
 - `checks::stages::seams::BoundaryDeclaration` for stage boundaries.
 
-The `atlas` command line cannot supply these, so a rule that needs one
+The `cargo atlas` command line cannot supply these, so a rule that needs one
 reports `UNAVAILABLE` there. That is deliberate: Atlas reports the gap
 instead of passing a rule it cannot check. See the
 [library guide](library.md#architecture-checks) to build a wrapper.

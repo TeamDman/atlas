@@ -1,5 +1,5 @@
 //! Native written-type claims at the snapshot -> cached AST -> check boundary.
-use atlas_core::{
+use atlas_lib::{
     analysis::Analysis,
     checks::typed_errors::{self, Reading, Unavailable},
     discovery::snapshot_workspace,

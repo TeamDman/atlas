@@ -1,21 +1,41 @@
 [workspace]
-members = ["crates/atlas-core"]
+members = ["crates/atlas-lib"]
 resolver = "3"
 
 [package]
-name = "atlas"
-version = "0.10.0"
+name = "cargo-atlas"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.99.1"
-default-run = "atlas"
-description = "Source-backed Rust navigation, workflows, and architecture diagrams"
+description = "Answer questions about how a Rust codebase is put together: navigation, change review, diagrams and architecture checks"
 repository = "https://github.com/flowerornament/atlas"
-include = ["src/**", "docs/**", "ARCHITECTURE.md", "CHANGELOG.md", "examples/**", "renderer/**", "vendor/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE*", "NOTICE*"]
+documentation = "https://github.com/flowerornament/atlas#documentation"
+readme = "README.md"
+keywords = ["cargo", "architecture", "diagram", "code-review", "static-analysis"]
+categories = ["development-tools::cargo-plugins", "command-line-utilities", "visualization"]
+# Anchored: unanchored patterns match at any depth, including untracked or
+# linked directories in a working copy.
+include = [
+    "/src/**",
+    "/docs/**",
+    "!/docs/**/.*/**",
+    "/examples/**",
+    "!/examples/**/target/**",
+    "/renderer/**",
+    "/vendor/**",
+    "/ARCHITECTURE.md",
+    "/CHANGELOG.md",
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/LICENSE-APACHE",
+    "/LICENSE-MIT",
+    "/NOTICE",
+]
 license = "MIT OR Apache-2.0"
-publish = false
 
 [dependencies]
-atlas-core = { version = "0.3.0", path = "crates/atlas-core", features = ["clap"] }
+atlas-lib = { version = "0.4.0", path = "crates/atlas-lib", features = ["clap"] }
 cargo_metadata = "0.23.1"
 clap = { version = "4.6.7", features = ["derive"] }
 serde = { version = "1.0.229", features = ["derive"] }

@@ -1,6 +1,5 @@
 //! Native stage questions, keeping source observations and authority separate.
-use atlas::{Result, discovery};
-use atlas_core::{
+use atlas_lib::{
     checks::{
         self,
         policy::{Policy, PublishedStages},
@@ -8,6 +7,7 @@ use atlas_core::{
     model::Diagnostic,
     population::FileSelection,
 };
+use cargo_atlas::{Result, discovery};
 use clap::Args;
 use serde::Serialize;
 use std::{
