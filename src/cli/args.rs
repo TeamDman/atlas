@@ -47,7 +47,7 @@ pub(super) enum Command {
     Census(navigation::ScopeArgs),
     /// Find where a name is declared, and what mentions it.
     #[command(
-        after_help = "Answers: where is this name declared, and what mentions it?\nAccepts: a NAME, a path such as parse::Tree, or a source-site ID. When a name has several declarations, all of them are shown.\nEvidence: names written in the source (lexical). Mentions are approximate, not resolved like the compiler does.\nExample: cargo atlas name Tree --relations"
+        after_help = "Answers: where is this name declared, and what mentions it?\nAccepts: a NAME; MODULE::NAME, where the modules are the end of its module path (file directories and name, then inline mod blocks), such as parse::Tree; or FILE:LINE, such as src/parse.rs:4. Both populations read it the same way. When a selector matches several declarations, all of them are shown.\nEvidence: names written in the source (lexical). Mentions are approximate, not resolved like the compiler does.\nExample: cargo atlas name Tree --relations"
     )]
     Name(navigation::RelatedNameArgs),
     /// List what a file, directory or package contains.

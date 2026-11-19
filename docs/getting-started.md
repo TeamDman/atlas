@@ -86,7 +86,9 @@ src/lib.rs:2:check [Pub Mod]
 
 `check` is both a module and a function. Atlas lists both instead of picking
 one. This is a rule throughout Atlas: when something is ambiguous, you see
-every candidate.
+every candidate. To pick one, give the end of its module path,
+`cargo atlas name check::check`, or its site, `cargo atlas name
+src/check.rs:10`.
 
 Add `--relations` to see the mentions themselves.
 

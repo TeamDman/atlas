@@ -209,6 +209,23 @@ impl Item {
     }
 }
 
+/// The inline `mod` blocks in `outline` that enclose `item`, outermost first.
+pub(crate) fn enclosing_modules<'a>(outline: &'a [Item], item: &Item) -> Vec<&'a str> {
+    let mut found: Vec<_> = outline
+        .iter()
+        .filter(|module| {
+            module.kind == ItemKind::Mod
+                && module.syntax_span.start < item.syntax_span.start
+                && item.syntax_span.end <= module.syntax_span.end
+        })
+        .collect();
+    found.sort_by_key(|module| module.syntax_span.start);
+    found
+        .into_iter()
+        .map(|module| module.name.as_str())
+        .collect()
+}
+
 pub struct TestRegions {
     /// Inclusive 1-based line ranges, in source order and non-overlapping.
     spans: Vec<(usize, usize)>,

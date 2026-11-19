@@ -223,3 +223,52 @@ fn compatibility_name_alias_warns_with_both_population_contracts() {
         assert!(!String::from_utf8_lossy(&canonical.stderr).contains("compatibility alias"));
     }
 }
+
+#[test]
+fn name_selectors_mean_the_same_in_both_populations() {
+    let fixture = Fixture::new(&[
+        (
+            "src/lib.rs",
+            "pub mod parse;\npub mod nest {\n    pub mod a { pub fn repeated() {} } pub mod b { pub fn repeated() {} }\n}\n",
+        ),
+        ("src/parse.rs", "pub struct Tree;\n"),
+    ]);
+    let sites = |args: &[&str]| -> Vec<String> {
+        let mut all = args.to_vec();
+        all.push("--json");
+        let report = report(&fixture, &all);
+        assert_eq!(report["question"], "name");
+        assert_eq!(report["query"], args[1]);
+        report["matches"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .map(|m| {
+                let file = m["file"].as_str().expect("file");
+                let line = m["line"]
+                    .as_u64()
+                    .or_else(|| m["declaration"]["line"].as_u64())
+                    .expect("line");
+                format!("{file}:{line}")
+            })
+            .collect()
+    };
+    for population in [&[][..], &["--population", "all"][..]] {
+        let with = |selector: &'static str| {
+            let mut args = vec!["name", selector];
+            args.extend(population);
+            sites(&args)
+        };
+        assert_eq!(with("parse::Tree"), ["src/parse.rs:1"], "{population:?}");
+        assert_eq!(with("src/parse.rs:1"), ["src/parse.rs:1"], "{population:?}");
+        assert_eq!(
+            with("nest::a::repeated"),
+            ["src/lib.rs:3"],
+            "{population:?}"
+        );
+        assert_eq!(with("repeated").len(), 2, "{population:?}");
+        let mut args = vec!["name", "check::Tree"];
+        args.extend(population);
+        assert!(!run(&fixture, &args).status.success(), "{population:?}");
+    }
+}

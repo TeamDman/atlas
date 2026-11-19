@@ -13,6 +13,7 @@ use std::{
 pub mod documentation;
 pub mod navigation;
 pub mod review;
+pub(crate) mod selector;
 
 const BASIS: &str = "Lexical declaration evidence; candidate identity is approximate, not runtime use or ownership.";
 
@@ -105,20 +106,27 @@ pub struct NameCard<'a> {
 #[derive(Debug, Serialize)]
 pub struct Names<'a> {
     pub schema: u32,
-    pub name: String,
+    /// The selector as given.
+    pub query: String,
     pub ambiguous: bool,
     pub matches: Vec<NameCard<'a>>,
     pub basis: &'static str,
 }
-/// Exact bare name or exact source-site ID; multiple sites stay explicit.
+/// A `NAME`, `MODULE::NAME` or `FILE:LINE[:COLUMN]` selector, or an exact
+/// declaration ID; multiple sites stay explicit. The modules match the end of
+/// the declaration's module path: its file's directories and name, then
+/// enclosing inline `mod` blocks. This is lexical, not Rust path resolution;
+/// a graph read back from JSON has no inline modules, so paths through them
+/// do not match.
 pub fn name<'a>(graph: &'a SourceGraph, name: &str) -> Result<Names<'a>> {
+    let selector = selector::Selector::parse(name)?;
     let mut matches = Vec::new();
     for file in &graph.files {
-        for declaration in file
-            .declarations
-            .iter()
-            .filter(|d| !d.test_only && (d.name == name || d.id == name))
-        {
+        for declaration in file.declarations.iter().filter(|d| {
+            let inline: Vec<&str> = d.modules.iter().map(String::as_str).collect();
+            !d.test_only
+                && (d.id == name || selector.admits(&d.name, &file.path, d.line, None, &inline))
+        }) {
             let mut card = NameCard {
                 file: &file.path,
                 crate_name: &file.crate_name,
@@ -143,11 +151,11 @@ pub fn name<'a>(graph: &'a SourceGraph, name: &str) -> Result<Names<'a>> {
         }
     }
     if matches.is_empty() {
-        return Err(format!("no production declaration matching {name:?}; use census/module or an exact source-site ID").into());
+        return Err(format!("no production declaration matching {name:?}; give NAME, MODULE::NAME (the end of its module path, inline modules included), FILE:LINE or a declaration ID").into());
     }
     Ok(Names {
         schema: 1,
-        name: name.into(),
+        query: name.into(),
         ambiguous: matches.len() > 1,
         matches,
         basis: BASIS,
@@ -242,7 +250,7 @@ impl Names<'_> {
     pub fn text(&self, related: bool) -> String {
         let mut out = format!(
             "{}: {} declaration site{}{}\n",
-            self.name,
+            self.query,
             self.matches.len(),
             if self.matches.len() == 1 { "" } else { "s" },
             if self.ambiguous { " (ambiguous)" } else { "" }

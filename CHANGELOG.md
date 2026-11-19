@@ -6,6 +6,15 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `name` reads one selector grammar with or without `--population`: `NAME`,
+ `MODULE::NAME` (the end of the module path, inline `mod` blocks included,
+ such as `parse::Tree` or `nest::a::repeated`) or `FILE:LINE`. Before, the
+ default population refused `parse::Tree`, and inline module paths failed in
+ both.
+- **Breaking (JSON):** `name --json` without `--population` reports the input
+ as `query`, not `name`, and adds `question: "name"`, as the `--population`
+ report already did. **Breaking (library):** `queries::Names::name` is renamed
+ `query`.
 - `flow --function` selects a trait's default body (`Trait::method`), a trait
  impl's method as `<Type as Trait>::method`, and any function by the line
  (or `LINE:COLUMN`) where its name is written. When a selector matches several

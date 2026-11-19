@@ -41,6 +41,9 @@ pub struct Declaration {
     pub summary: Option<String>,
     pub test_only: bool,
     pub(crate) block: std::sync::Arc<str>,
+    /// Enclosing inline modules, outermost first; empty after deserializing.
+    #[serde(skip)]
+    pub(crate) modules: Vec<String>,
 }
 
 impl Declaration {

@@ -421,7 +421,7 @@ fn legacy(
         Question::Name(name) => {
             let result = cargo_atlas::queries::name(&graph, name)?;
             if json_output {
-                super::json(&result)?
+                report_json("name", &result)?
             } else {
                 result.text(relations)
             }

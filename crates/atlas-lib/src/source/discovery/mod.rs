@@ -383,6 +383,10 @@ fn read_metadata(
                         || !crate::population::TestSelection::Production
                             .admits_offset(source, item.syntax_span.start),
                     block: Arc::clone(&item.declaration_block),
+                    modules: crate::source::enclosing_modules(source.outline(), item)
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect(),
                 })
                 .collect();
             files.push(SourceFile {

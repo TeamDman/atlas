@@ -92,24 +92,12 @@ pub struct ModuleContext {
     pub edges: Vec<Edge>,
 }
 impl Navigation<'_> {
-    /// Bare name or the native path-fragment::Name spelling; no Rust resolution implied.
+    /// A `NAME`, `MODULE::NAME` or `FILE:LINE[:COLUMN]` selector. The modules
+    /// match the end of the declaration's module path: its file's directories
+    /// and name, then enclosing inline `mod` blocks. No Rust resolution implied.
     pub fn name(&self, query: &str) -> Result<Name> {
         self.require_sources(None)?;
-        let (fragment, name) = query
-            .rsplit_once("::")
-            .map_or((None, query), |(fragment, name)| {
-                (Some(fragment.replace("::", "/")), name)
-            });
-        if name.is_empty() {
-            return Err("a name query must name an identifier".into());
-        }
-        let in_fragment = |path: &str| {
-            fragment.as_ref().is_none_or(|part| {
-                path == part
-                    || path.ends_with(&format!("/{part}"))
-                    || path.ends_with(&format!("/{part}.rs"))
-            })
-        };
+        let selector = crate::queries::selector::Selector::parse(query)?;
         let mut matches = Vec::new();
         let mut hidden = 0;
         let mut reexports = Vec::new();
@@ -117,9 +105,15 @@ impl Navigation<'_> {
         let mut defining = BTreeSet::new();
         for package in &self.workspace.crates {
             for file in &package.files {
+                let outline = file.source.outline();
                 for item in file.items(TestSelection::OutsideTestModules) {
+                    let inline = crate::source::enclosing_modules(outline, item);
                     if item.kind == ItemKind::PubUse {
-                        if in_fragment(&file.rel)
+                        let Some(name) = selector.name() else {
+                            continue;
+                        };
+                        // A re-export is selected by its own module path.
+                        if selector.admits(name, &file.rel, item.line, None, &inline)
                             && file.source.import_for(item).is_some_and(|import| {
                                 import.bindings.as_ref().is_ok_and(|bindings| {
                                     bindings.iter().any(|binding| {
@@ -130,7 +124,7 @@ impl Navigation<'_> {
                         {
                             reexports.push(Site::of(&package.name, &file.rel, item));
                         }
-                    } else if item.name == name && in_fragment(&file.rel) {
+                    } else if selector.admits(&item.name, &file.rel, item.line, None, &inline) {
                         let site = Site::of(&package.name, &file.rel, item);
                         if item.kind == ItemKind::Impl {
                             impls.push(site);
@@ -147,8 +141,15 @@ impl Navigation<'_> {
             }
         }
         if matches.is_empty() && hidden == 0 {
-            return Err(format!("no declaration of `{query}` in the selected source scope; macro-generated declarations are outside the lexical grammar").into());
+            return Err(format!("no declaration of `{query}` in the selected source scope; give NAME, MODULE::NAME (the end of its module path, inline modules included) or FILE:LINE; macro-generated declarations are outside the lexical grammar").into());
         }
+        // A site selector names whatever is declared there.
+        let name = selector
+            .name()
+            .or_else(|| matches.first().map(|site: &Site| site.name.as_str()))
+            .unwrap_or_default()
+            .to_owned();
+        let name = name.as_str();
         let refs_approx = self
             .workspace
             .crates
