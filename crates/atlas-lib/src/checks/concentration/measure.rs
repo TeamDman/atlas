@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 /// One tree's concentration subjects over a declared population.
 #[derive(Default, Debug, Serialize)]
+#[non_exhaustive]
 pub struct Measure {
     /// Every entry file, with its body lines.
     pub entry: BTreeMap<String, usize>,

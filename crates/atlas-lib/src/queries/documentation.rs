@@ -10,6 +10,7 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum HeaderPopulation {
     AllFiles,
     OutsideTestFiles,
@@ -17,6 +18,7 @@ pub enum HeaderPopulation {
 /// Which lexical //! sites a header rule considers.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum HeaderScope {
     File,
     AnyModule,
@@ -44,6 +46,7 @@ pub struct Policy<'a> {
 }
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Finding {
     MissingHeader {
         file: String,
@@ -59,6 +62,7 @@ pub enum Finding {
     },
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Report {
     pub schema: u32,
     pub scope: String,

@@ -26,6 +26,7 @@ pub use syntax::{
 
 /// Syntax failure contains only portable data and a one-based source location.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SyntaxError {
     Parse {
         line: usize,
@@ -71,6 +72,7 @@ impl std::fmt::Display for SyntaxError {
 impl std::error::Error for SyntaxError {}
 
 /// One use declaration, normalized once with its exact source witness.
+#[non_exhaustive]
 pub struct Import {
     pub line: usize,
     pub end_line: usize,
@@ -82,6 +84,7 @@ pub struct Import {
 }
 /// Successfully parsed source. A Source certifies that structural facts exist;
 /// it does not certify that Rust type-checks or that macros have been expanded.
+#[non_exhaustive]
 pub struct Source {
     projection: RustSourceProjection,
     outline: Vec<Item>,

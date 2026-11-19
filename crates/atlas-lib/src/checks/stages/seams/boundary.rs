@@ -7,6 +7,7 @@ use crate::source::{ItemKind, Visibility};
 use std::collections::{BTreeMap, BTreeSet};
 /// A project wrapper's interpreted boundary, bound to one captured stage root.
 #[derive(Clone, Debug, serde::Serialize)]
+#[non_exhaustive]
 pub struct BoundaryDeclaration {
     pub file: String,
     pub content_fingerprint: String,

@@ -22,6 +22,7 @@ fn repository_command(program: &str) -> Command {
     command
 }
 
+#[non_exhaustive]
 pub struct GitStore {
     pub(super) directory: PathBuf,
     root: PathBuf,

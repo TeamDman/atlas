@@ -13,6 +13,7 @@ use std::{
 };
 
 #[derive(Clone, Serialize)]
+#[non_exhaustive]
 pub struct DeclarationVersion {
     pub id: String,
     pub site: Site,
@@ -35,6 +36,7 @@ impl DeclarationVersion {
 }
 #[derive(Serialize)]
 #[serde(tag = "change", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ChangedDeclaration {
     Removed {
         before: DeclarationVersion,
@@ -78,16 +80,19 @@ impl ChangedDeclaration {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Side {
     Current,
     Prior,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Incident {
     pub side: Side,
     pub edge: Edge,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct DeclarationDiff {
     pub schema: u32,
     pub scope: String,

@@ -12,6 +12,7 @@ use serde::Serialize;
 use std::collections::BTreeSet;
 
 #[derive(Clone, Serialize)]
+#[non_exhaustive]
 pub struct Site {
     pub package: String,
     pub file: String,
@@ -48,6 +49,7 @@ impl Site {
     }
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Edge {
     pub source: Site,
     pub target: String,
@@ -56,6 +58,7 @@ pub struct Edge {
     pub evidence: Evidence,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Name {
     pub schema: u32,
     pub query: String,
@@ -69,6 +72,7 @@ pub struct Name {
     pub basis: Basis,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Module {
     pub schema: u32,
     pub path: String,
@@ -77,6 +81,7 @@ pub struct Module {
     pub basis: Basis,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct ModuleContext {
     pub package: String,
     pub header: Vec<String>,

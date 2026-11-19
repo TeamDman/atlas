@@ -4,6 +4,7 @@ use serde::Serialize;
 pub mod moves;
 
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct ItemSpan {
     pub name: String,
     pub kind: String,
@@ -14,12 +15,14 @@ pub struct ItemSpan {
 /// The native block-depth unit: declaration through next top-level declaration
 /// or test region, rather than the attached syntactic closing brace.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Block {
     pub name: String,
     pub line: usize,
     pub lines: usize,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct FileOutline {
     pub file: String,
     pub fingerprint: String,
@@ -31,6 +34,7 @@ pub struct FileOutline {
     pub uncovered_code: Vec<usize>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Outline {
     pub schema: u32,
     pub scope: String,
@@ -130,6 +134,7 @@ pub fn outline(snapshot: &Snapshot, scope: &str) -> Result<Outline> {
 
 /// Native module-shape units; none denotes no top-level production block.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Shape {
     pub fingerprint: String,
     pub non_test_lines: usize,
@@ -137,12 +142,14 @@ pub struct Shape {
     pub largest_block: Option<Block>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct ShapeChange {
     pub file: String,
     pub before: Option<Shape>,
     pub after: Option<Shape>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct ShapeDiff {
     pub schema: u32,
     pub scope: String,

@@ -19,6 +19,7 @@ pub use changes::{ChangedDeclaration, DeclarationDiff, DeclarationVersion, Incid
 pub use dump::{BindingEvidence, Definition, Dump, Export, ExportKind};
 
 /// Reusable navigation over one capture. No query reopens source files.
+#[non_exhaustive]
 pub struct Navigation<'a> {
     snapshot: &'a Snapshot,
     workspace: Workspace,
@@ -149,6 +150,7 @@ impl<'a> Navigation<'a> {
 
 /// Physical byte identities; package contexts remain explicit in report rows.
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Basis {
     pub sources: BTreeMap<String, String>,
     pub diagnostics: Vec<Diagnostic>,
@@ -156,11 +158,13 @@ pub struct Basis {
 }
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Census {
     Rows(CensusRows),
     Module(Module),
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct CensusRows {
     pub schema: u32,
     pub scope: String,
@@ -170,6 +174,7 @@ pub struct CensusRows {
     pub basis: Basis,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Row {
     pub key: String,
     #[serde(flatten)]
@@ -177,6 +182,7 @@ pub struct Row {
 }
 /// Native units: aliases are use declarations; macros and lines ignore visibility.
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct Tally {
     pub types: usize,
     pub fns: usize,

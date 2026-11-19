@@ -10,6 +10,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Dump {
     pub schema: u32,
     pub population: VisibilitySelection,
@@ -19,6 +20,7 @@ pub struct Dump {
     pub basis: Basis,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Definition {
     pub id: String,
     pub site: Site,
@@ -28,6 +30,7 @@ pub struct Definition {
 /// A written pub use at a conventional lib/main root is the native facade surface.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ExportKind {
     Facade,
     Reexport,
@@ -35,12 +38,14 @@ pub enum ExportKind {
 /// Which written-source heuristic selected the candidates, never a Rust resolution proof.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum BindingEvidence {
     QualifiedSuffix,
     PackageName,
     WorkspaceName,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Export {
     pub id: String,
     pub site: Site,

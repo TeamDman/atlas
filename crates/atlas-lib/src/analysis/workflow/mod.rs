@@ -16,6 +16,7 @@ use std::{
 
 /// A relative source location; line numbers are one-based, columns zero-based.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Site {
     pub path: String,
     pub line: usize,
@@ -50,6 +51,7 @@ impl Site {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[non_exhaustive]
 pub enum Detail {
     #[default]
     Expressions,
@@ -59,6 +61,7 @@ pub enum Detail {
 /// One syntactic step. Branch arms and loop bodies keep their own ordered steps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Step {
     /// Explicit borrowing, including its independently ordered operand steps.
     Borrow { label: String, site: Site },
@@ -109,12 +112,14 @@ pub enum Step {
 /// The loop forms have different entry/exhaustion behavior.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum LoopKind {
     Infinite,
     While,
     For,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MatchArm {
     pub pattern: String,
     pub guard: Vec<Step>,
@@ -123,12 +128,14 @@ pub struct MatchArm {
 /// Syntactic control transfer, preserving labelled loop targets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "transfer", content = "target", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum ExitKind {
     Return,
     Break(Option<String>),
     Continue(Option<String>),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Arm {
     pub label: String,
     pub steps: Vec<Step>,
@@ -149,6 +156,7 @@ impl Step {
 }
 /// A source call observation. Receiver dispatch is unresolved until supported by source types.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Call {
     pub spelling: String,
     pub receiver: Option<String>,
@@ -156,6 +164,7 @@ pub struct Call {
     pub site: Site,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Binding {
     pub name: String,
     pub ty: Option<String>,
@@ -165,11 +174,13 @@ pub struct Binding {
 /// An item or `use` written inside a body. It declares a name and runs
 /// nothing, so it is not a step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Declared {
     pub label: String,
     pub site: Site,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Workflow {
     pub schema: u32,
     pub function: String,
@@ -222,6 +233,7 @@ pub fn read_many(root: &Path, anchors: &[(&str, &str)]) -> Result<Vec<Workflow>>
     Ok(ordered.into_values().collect())
 }
 /// Parsed module facts shared by body views and the program index.
+#[non_exhaustive]
 pub struct ParsedFile {
     pub functions: Vec<Workflow>,
     pub exports: std::collections::BTreeMap<String, Vec<Vec<String>>>,

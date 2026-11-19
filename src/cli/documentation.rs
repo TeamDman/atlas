@@ -83,6 +83,8 @@ pub(crate) fn run(metadata: &cargo_metadata::Metadata, options: &Options) -> Res
                 documentation::Finding::MissingOuterLineDoc { file, name, line } => {
                     println!("{file}:{line}: {name} has no outer /// comment");
                 }
+                // A finding this text output does not know is still shown.
+                other => println!("{other:?}"),
             }
         }
     }

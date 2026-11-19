@@ -4,7 +4,7 @@ use atlas_lib::{
     discovery::snapshot_workspace,
     model::Evidence,
     population::VisibilitySelection,
-    queries::navigation::{Census, Navigation, Tally},
+    queries::navigation::{Census, Navigation},
 };
 use std::fs;
 use support::Fixture;
@@ -53,17 +53,18 @@ fn census_workspace_rung_is_the_per_crate_golden() {
     };
     assert_eq!(report.rows.len(), 1);
     assert_eq!(report.rows[0].key, "demo-fix");
+    let total = &report.total;
     assert_eq!(
-        report.total,
-        Tally {
-            types: 3,
-            fns: 1,
-            aliases: 2,
-            macros: 1,
-            documented: 2,
-            token_lines: 20,
-            nontest_loc: 34
-        }
+        (
+            total.types,
+            total.fns,
+            total.aliases,
+            total.macros,
+            total.documented,
+            total.token_lines,
+            total.nontest_loc
+        ),
+        (3, 1, 2, 1, 2, 20, 34)
     );
     assert_eq!(report.total.doc_pct(), Some(50));
 }

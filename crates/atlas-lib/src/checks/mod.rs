@@ -13,6 +13,7 @@ use workspace::{CrateMap, FileMap, Workspace};
 
 /// Stage observations and configuration findings; no complete policy PASS is implied.
 #[derive(serde::Serialize)]
+#[non_exhaustive]
 pub struct StageReports {
     pub crates: BTreeMap<String, stages::StageReport>,
     pub policy_violations: Vec<String>,
@@ -102,6 +103,7 @@ fn read_stages(
 }
 
 /// Item-level seam observations; unavailable required inputs never become zero counts.
+#[non_exhaustive]
 pub struct SeamReports {
     pub stages: StageReports,
     pub crates: BTreeMap<String, stages::seams::SeamReading>,

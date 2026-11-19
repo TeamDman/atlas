@@ -20,6 +20,7 @@ use std::{
 };
 /// One crate-internal path from one module into another, at its site.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Edge {
     pub file: String,
     pub line: usize,
@@ -34,6 +35,7 @@ pub struct Edge {
 /// Why the textual reading cannot rank a path.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Unjudged {
     /// A glob over the crate root (`use crate::*`).
     RootGlob,
@@ -86,6 +88,7 @@ impl fmt::Display for Unjudged {
 
 /// One path the reading could not rank, at its site.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct UnjudgedPath {
     pub file: String,
     pub line: usize,
@@ -97,6 +100,7 @@ pub struct UnjudgedPath {
 /// unplaced module that, directly or through further unplaced modules,
 /// reads a later stage.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct TransitiveEdge {
     pub reader: Edge,
     pub via: Vec<String>,
@@ -107,6 +111,7 @@ pub struct TransitiveEdge {
 /// judged edge count, the paths and modules it could not judge, and the
 /// modules and stages the order and the tree do not share.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct StageReport {
     /// The declared stage interfaces, when the crate declares them.
     pub interfaces: Option<BTreeMap<String, policy::StageReads>>,

@@ -8,6 +8,7 @@ use super::SeamReading;
 
 /// Four native seam units; each counts distinct subjects in its own population.
 #[derive(serde::Serialize)]
+#[non_exhaustive]
 pub struct Totals {
     pub debt_items: usize,
     pub unlisted_exports: usize,

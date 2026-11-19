@@ -8,6 +8,7 @@ use std::{
 /// census rows, spec §3) belongs to consumers; the scanner reports everything
 /// it can name, including `const`/`static` so code anchors keep resolving.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[non_exhaustive]
 pub enum ItemKind {
     Struct,
     Enum,
@@ -93,6 +94,7 @@ impl ItemKind {
 /// Declaration visibility: `pub(self)` is private; every other restricted
 /// scope is its own rung. The census reads any non-private rung as pub-ish.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[non_exhaustive]
 pub enum Visibility {
     Pub,
     PubCrate,
@@ -149,6 +151,7 @@ impl Visibility {
 
 /// One struct field's written surface. Tuple fields use their numeric position.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Field {
     pub line_offset: usize,
     pub name: String,
@@ -159,6 +162,7 @@ pub struct Field {
 /// One declared item with its declaration block — the carrier the atlas verbs
 /// (spec §6 slices A–B) fold into census rows and co-mention edges.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Item {
     pub kind: ItemKind,
     pub visibility: Visibility,
@@ -226,6 +230,7 @@ pub(crate) fn enclosing_modules<'a>(outline: &'a [Item], item: &Item) -> Vec<&'a
         .collect()
 }
 
+#[non_exhaustive]
 pub struct TestRegions {
     /// Inclusive 1-based line ranges, in source order and non-overlapping.
     spans: Vec<(usize, usize)>,

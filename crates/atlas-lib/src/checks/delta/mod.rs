@@ -18,6 +18,7 @@ pub struct Basis {
     pub candidate: String,
 }
 #[derive(Debug, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
 pub struct Raise {
     pub subject: String,
     pub before: Option<usize>,
@@ -25,12 +26,14 @@ pub struct Raise {
     pub measured: usize,
 }
 #[derive(Default, Serialize)]
+#[non_exhaustive]
 pub struct Boundaries {
     pub before: BTreeMap<String, BTreeMap<String, BoundaryDeclaration>>,
     pub after: BTreeMap<String, BTreeMap<String, BoundaryDeclaration>>,
 }
 /// Project observations accompany the actual candidate capture and description.
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Inputs {
     pub basis: Basis,
     pub description: String,
@@ -50,12 +53,14 @@ impl Inputs {
     }
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Measurements {
     pub before: measure::Measures,
     pub after: measure::Measures,
     pub shape: crate::review::ShapeDiff,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct SeamDelta {
     pub crate_name: String,
     pub totals: super::stages::seams::Totals,
@@ -64,6 +69,7 @@ pub struct SeamDelta {
     pub floor_added: Vec<String>,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Report {
     pub basis: Basis,
     pub measurements: Option<Measurements>,

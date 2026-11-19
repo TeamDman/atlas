@@ -7,6 +7,7 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum VisibilitySelection {
     All,
     Public,
@@ -43,6 +44,7 @@ impl std::str::FromStr for VisibilitySelection {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum TestSelection {
     All,
     Production,
@@ -74,6 +76,7 @@ impl TestSelection {
 /// File membership is independent of declaration visibility and test evidence.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum FileSelection {
     /// Every discovered package file, including Cargo roots outside src.
     Discovered,

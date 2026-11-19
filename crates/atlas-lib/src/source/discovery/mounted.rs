@@ -14,6 +14,7 @@ use std::{
 /// A source-tree declaration's module location for a captured physical file.
 /// This records a policy population; it does not establish a Cargo namespace.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[non_exhaustive]
 pub struct FileMount {
     pub path: String,
     pub module: String,
@@ -21,6 +22,7 @@ pub struct FileMount {
 
 /// A required mount that could not supply source; candidates remain explicit.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct UnavailableMount {
     pub declaring_file: String,
     pub module: String,
@@ -28,6 +30,7 @@ pub struct UnavailableMount {
 }
 /// Native mounted-file population and its unavailable inputs, from one traversal.
 #[derive(Debug, Default)]
+#[non_exhaustive]
 pub struct MountedSources {
     pub files: Vec<FileMount>,
     pub unavailable: Vec<UnavailableMount>,

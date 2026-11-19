@@ -6,6 +6,7 @@ use std::{
     process::{Command, Stdio},
 };
 pub use store::GitStore;
+#[non_exhaustive]
 pub struct Revision {
     pub root: PathBuf,
     pub commit: String,

@@ -10,12 +10,14 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct CrateMeasure {
     pub token_lines: usize,
     pub tokens: usize,
     pub surface: usize,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Measures {
     pub crates: BTreeMap<String, CrateMeasure>,
     pub dependencies: BTreeMap<String, BTreeSet<String>>,

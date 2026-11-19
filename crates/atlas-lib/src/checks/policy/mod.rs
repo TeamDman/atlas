@@ -43,6 +43,7 @@ pub struct Policy {
 /// crate holds a forward edge, an unjudged path or an unnamed module.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct StageOrder {
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -57,6 +58,7 @@ pub struct StageOrder {
 /// refuses it.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct StageReads {
     #[serde(default)]
     pub reads: Vec<String>,
@@ -71,6 +73,7 @@ pub struct StageReads {
 /// candidate's own policy must use rows.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
+#[non_exhaustive]
 pub enum StageDebt {
     Rows(BTreeMap<String, DebtRow>),
     Bare(Vec<String>),
@@ -114,6 +117,7 @@ impl StageDebt {
 /// The count only goes down.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct DebtRow {
     pub items: usize,
     pub owner: String,
@@ -139,6 +143,7 @@ impl StageReads {
 /// interiors.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct StageSeams {
     pub floor: Vec<String>,
     #[serde(default)]
@@ -159,6 +164,7 @@ pub struct StageSeams {
 /// type is read whole, and `owner` is the bead that narrows it.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Writers {
     pub stage: String,
     pub reason: String,
@@ -177,6 +183,7 @@ pub struct Writers {
 /// retires them. The count only goes down.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct TestCoupling {
     pub pairs: usize,
     pub owner: String,
@@ -184,12 +191,14 @@ pub struct TestCoupling {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct CorePopulation {
     pub core: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct SizeCeilings {
     pub core_token_lines: usize,
     #[serde(rename = "crate")]
@@ -198,6 +207,7 @@ pub struct SizeCeilings {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct CrateGraphPolicy {
     #[serde(default)]
     pub vendored: Vec<String>,
@@ -220,6 +230,7 @@ pub struct CrateRule {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct AuthorityRule {
     pub fact: String,
     pub home: String,
@@ -233,6 +244,7 @@ pub struct AuthorityRule {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct ConcentrationPolicy {
     pub population: Vec<String>,
     pub entry_lines: usize,
@@ -267,6 +279,7 @@ pub struct Amendment {
 /// A knob of the section that a loosening moves.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Knob {
     EntryLines,
     FileLines,
@@ -277,6 +290,7 @@ pub enum Knob {
 /// One file held above a limit at its measured body lines.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct LineRow {
     pub path: String,
     pub lines: usize,
@@ -285,6 +299,7 @@ pub struct LineRow {
 /// One module name with several homes, and what the repetition means.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct NameRow {
     pub name: String,
     pub ruling: Ruling,
@@ -298,6 +313,7 @@ pub struct NameRow {
 /// Whether a repeated module name holds one meaning or two.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Ruling {
     /// One concept seen from several stages or crates; declared, kept.
     Facet,
@@ -308,6 +324,7 @@ pub enum Ruling {
 /// One re-export that gives an item a second home or a second name.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+#[non_exhaustive]
 pub struct Alias {
     /// The module that holds the re-export (`demo-compiler`, its root, or
     /// `demo-session::workflow::status`).
@@ -321,6 +338,7 @@ pub struct Alias {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum AliasKind {
     /// `pub use stage::sub;` at the crate root re-homes a nested module.
     ModuleRelay,
@@ -351,6 +369,7 @@ impl Policy {
 
 /// A written project authority and its exact authored field address.
 #[derive(Debug, Clone, Serialize)]
+#[non_exhaustive]
 pub struct Reference {
     pub field: Vec<String>,
     pub written: String,
@@ -478,6 +497,7 @@ impl Policy {
 
 /// Stage declarations in the published baseline, for monotone seam ratchets.
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct PublishedStages {
     pub orders: Vec<StageOrder>,
     pub reads: BTreeMap<String, BTreeMap<String, StageReads>>,

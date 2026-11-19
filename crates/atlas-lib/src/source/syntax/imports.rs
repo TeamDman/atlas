@@ -1,6 +1,7 @@
 //! One syn UseTree flattening for source facts and qualified projections.
 /// One local name introduced by a captured `use` declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ImportBinding {
     pub source: String,
     pub source_path: String,

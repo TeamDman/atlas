@@ -35,6 +35,7 @@ pub fn scan_metadata(metadata: &Metadata) -> Result<SourceGraph> {
 }
 
 /// Source bytes and their derived lexical graph from one discovery pass.
+#[non_exhaustive]
 pub struct Snapshot {
     graph: SourceGraph,
     sources: BTreeMap<String, Arc<crate::source::Captured>>,
@@ -770,6 +771,7 @@ pub fn fingerprint(bytes: &[u8]) -> String {
 
 /// A scope that is absent differs from a scope with multiple possible meanings.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum ScopeError {
     Absent {
         scope: String,

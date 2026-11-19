@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[non_exhaustive]
 pub enum Level {
     Stages,
     Modules,
@@ -27,6 +28,7 @@ impl Level {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[non_exhaustive]
 pub enum View {
     Dependencies,
     Types,
@@ -53,6 +55,7 @@ pub struct Query {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "observation", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum EdgeEvidence {
     Source(Evidence),
     DeclaredRead,

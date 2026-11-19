@@ -17,6 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// An interpreted header citation tied to one captured file.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct HeaderCitation {
     pub content_fingerprint: String,
     pub cited: bool,
@@ -36,11 +37,13 @@ pub struct Inputs {
     pub test_support_features: Vec<String>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct NameHomes {
     pub name: String,
     pub homes: BTreeSet<String>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Rows {
     pub entry: Vec<LineRow>,
     pub file: Vec<LineRow>,
@@ -49,6 +52,7 @@ pub struct Rows {
     pub header_uncited: BTreeMap<String, BTreeSet<String>>,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct DebtSummary {
     pub limit: usize,
     pub rows: usize,
@@ -56,6 +60,7 @@ pub struct DebtSummary {
     pub over_after: usize,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Summary {
     pub population: Vec<String>,
     pub entry: DebtSummary,
@@ -67,6 +72,7 @@ pub struct Summary {
     pub measured: Rows,
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Verdict {
     pub violations: Vec<String>,
     pub unavailable: Vec<MissingInput>,

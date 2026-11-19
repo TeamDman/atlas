@@ -2,6 +2,7 @@
 use crate::workflow::{Call, Site};
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Type {
     pub id: String,
     pub name: String,
@@ -24,6 +25,7 @@ impl Type {
     }
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Function {
     pub id: String,
     pub name: String,
@@ -48,6 +50,7 @@ impl Function {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Role {
     Input,
     Output,
@@ -56,6 +59,7 @@ pub enum Role {
     AliasTarget,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Reference {
     pub from: String,
     pub to: String,
@@ -70,24 +74,28 @@ pub struct Reference {
     pub wrappers: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Constructor {
     pub from: String,
     pub to: String,
     pub line: usize,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ResolvedCall {
     pub from: String,
     pub to: String,
     pub site: Site,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct UnknownCall {
     pub from: String,
     pub call: Call,
     pub reason: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct UnknownType {
     pub from: String,
     pub spelling: String,
@@ -95,6 +103,7 @@ pub struct UnknownType {
     pub reason: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Facts {
     pub schema: u32,
     pub types: Vec<Type>,
@@ -116,6 +125,7 @@ pub struct Facts {
 
 /// A written constant, not a compile-time evaluated value.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Constant {
     pub name: String,
     pub module: Vec<String>,

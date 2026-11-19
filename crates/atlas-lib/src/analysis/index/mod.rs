@@ -21,11 +21,13 @@ use std::{
     path::Path,
 };
 
+#[non_exhaustive]
 pub struct Function {
     pub id: String,
     pub scope: Vec<String>,
     pub flow: Workflow,
 }
+#[non_exhaustive]
 pub struct Boundary {
     pub module: Module,
     pub path: Vec<String>,
@@ -44,6 +46,7 @@ pub struct Boundary {
 ///     index.functions().reverse();
 /// }
 /// ```
+#[non_exhaustive]
 pub struct Index {
     functions: Vec<Function>,
     boundaries: Vec<Boundary>,
@@ -55,6 +58,7 @@ pub struct Index {
     exports: BTreeMap<Vec<String>, Vec<Vec<String>>>,
 }
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Target {
     Function(usize),
     Boundary(usize, Option<String>),

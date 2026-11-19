@@ -39,6 +39,7 @@ fn line_motion_is_not_a_change_but_renames_and_signatures_are() {
             ChangedDeclaration::Added { after } => ("added", after.site.name.as_str()),
             ChangedDeclaration::Removed { before } => ("removed", before.site.name.as_str()),
             ChangedDeclaration::Modified { after, .. } => ("modified", after.site.name.as_str()),
+            _ => ("unexpected change kind", ""),
         })
         .collect::<Vec<_>>();
     assert_eq!(

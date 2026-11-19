@@ -15,6 +15,7 @@ use std::{
 
 /// Observations are tied to a captured workspace; absent entries are unavailable.
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct Inputs {
     workspace: PathBuf,
     pub paths: BTreeMap<String, PathState>,
@@ -33,6 +34,7 @@ impl Inputs {
 }
 #[derive(Serialize)]
 #[serde(tag = "kind", content = "reason", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum PathState {
     Present,
     Absent,
@@ -40,6 +42,7 @@ pub enum PathState {
 }
 #[derive(Serialize)]
 #[serde(tag = "kind", content = "reading", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum PatternState {
     Read {
         sources: BTreeMap<String, String>,
@@ -59,17 +62,20 @@ pub struct ReferenceResolution {
 }
 #[derive(Serialize)]
 #[serde(tag = "kind", content = "reason", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Resolution {
     Valid,
     Invalid(String),
     Unavailable(String),
 }
 #[derive(Serialize)]
+#[non_exhaustive]
 pub struct MissingInput {
     pub field: String,
     pub reason: String,
 }
 #[derive(Default, Serialize)]
+#[non_exhaustive]
 pub struct Report {
     pub violations: Vec<String>,
     pub unavailable: Vec<MissingInput>,

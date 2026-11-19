@@ -120,6 +120,15 @@ pub(super) fn build(
                     });
                     continue;
                 }
+                // A resolution this view does not know stays unresolved.
+                other => {
+                    observations.push(Observation {
+                        function: f.id.clone(),
+                        call: Some(call.clone()),
+                        reason: format!("unrecognized call resolution: {other:?}"),
+                    });
+                    continue;
+                }
             };
             connections
                 .entry((f.id.clone(), target))

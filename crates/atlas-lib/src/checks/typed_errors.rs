@@ -10,6 +10,7 @@ use syn::{spanned::Spanned, visit::Visit};
 
 /// One package's source reading, independent of project authority and policy verdicts.
 #[derive(Default, Serialize)]
+#[non_exhaustive]
 pub struct Reading {
     pub sources: BTreeMap<String, String>,
     /// Distinct production source lines containing a written String-error type.
@@ -18,6 +19,7 @@ pub struct Reading {
 }
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Unavailable {
     EmptyPopulation,
     Syntax { file: String, reason: String },

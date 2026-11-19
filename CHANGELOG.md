@@ -6,6 +6,21 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- **Breaking (library):** atlas-lib's public report, fact, step and view
+ types are `#[non_exhaustive]`, so later fields and variants are not breaking
+ changes. Code outside atlas-lib can no longer build them with struct
+ literals or match their enums without a `_` arm; read their fields instead.
+ These stay exhaustive because callers build them, or because their set is
+ deliberately closed:
+ - inputs: `architecture::{Architecture, Module, Kind, WorkflowAnchor}`,
+   `population::Population`, `checks::policy::{Policy, CrateRule, Amendment}`,
+   `checks::policy::validation::{Match, ReferenceResolution}`,
+   `checks::concentration::{Inputs, Citations}`, `checks::delta::Basis`,
+   `documentation::Policy`;
+ - the diagram model renderers and views build:
+   `diagram::{Diagram, Node, Edge, Coverage, Surface, Query}`;
+ - the closed verdict `checks::policy::validation::Status` (pass, refuse,
+   unavailable).
 - `program --json` refuses `--out` and `--evidence-dir`, as `dependencies`
  does, instead of ignoring them.
 - Text diagrams say `(1 site)`, not `(1 sites)`. `name --population` headings

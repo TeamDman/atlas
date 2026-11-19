@@ -12,6 +12,7 @@ use crate::{Result, architecture::Architecture, discovery::Snapshot, representat
 /// Share captured bytes and lazily parse each selected file once for this invocation.
 /// Context-independent workflow facts are also materialized once and shared across queries.
 /// Lexical inventory/test evidence remains owned by the snapshot, not a second AST census.
+#[non_exhaustive]
 pub struct Analysis<'a> {
     snapshot: &'a Snapshot,
     sources: Sources,

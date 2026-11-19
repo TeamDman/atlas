@@ -18,6 +18,7 @@ pub(crate) mod selector;
 const BASIS: &str = "Lexical declaration evidence; candidate identity is approximate, not runtime use or ownership.";
 
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Census {
     pub schema: u32,
     pub scope: String,
@@ -95,6 +96,7 @@ pub fn census(graph: &SourceGraph, scope: Option<&str>) -> Result<Census> {
     Ok(result)
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct NameCard<'a> {
     pub file: &'a str,
     pub crate_name: &'a str,
@@ -104,6 +106,7 @@ pub struct NameCard<'a> {
     pub possible_incoming: Vec<&'a Relationship>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Names<'a> {
     pub schema: u32,
     /// The selector as given.
@@ -162,6 +165,7 @@ pub fn name<'a>(graph: &'a SourceGraph, name: &str) -> Result<Names<'a>> {
     })
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct ModuleCard<'a> {
     pub schema: u32,
     pub scope: String,

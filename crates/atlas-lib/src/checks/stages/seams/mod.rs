@@ -75,6 +75,7 @@ struct UnownedRead {
 }
 
 /// One seamed crate's item-level reading.
+#[non_exhaustive]
 pub struct SeamReading {
     crate_name: String,
     /// Reader stage, then read stage, then item name: the first site.

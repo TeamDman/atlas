@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// A module path established by declarations from a Cargo target root.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Mount {
     pub root: String,
     pub modules: Vec<String>,
@@ -17,6 +18,7 @@ pub struct Mount {
 /// One package's observation of a physical file, including disconnected source.
 /// A path shared by packages has multiple observations, never a chosen owner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct SourceFile {
     pub path: String,
     pub crate_name: String,
@@ -31,6 +33,7 @@ pub struct SourceFile {
 
 /// A declaration site, not a globally resolved Rust symbol identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Declaration {
     pub id: String,
     pub name: String,
@@ -62,6 +65,7 @@ impl Declaration {
 /// The syntactic observation behind a relationship.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Evidence {
     ParameterMention,
     ReturnMention,
@@ -80,6 +84,7 @@ impl Evidence {
 /// Textual candidate selection; uniqueness does not establish Rust resolution.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", content = "value", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Resolution {
     Unique(String),
     Ambiguous(Vec<String>),
@@ -87,6 +92,7 @@ pub enum Resolution {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Relationship {
     pub id: String,
     pub source: String,
@@ -96,6 +102,7 @@ pub struct Relationship {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Diagnostic {
     pub file: String,
     pub line: Option<usize>,
@@ -107,6 +114,7 @@ pub struct Diagnostic {
 
 /// All source observations for one scan, serialized with a schema version.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct SourceGraph {
     pub schema: u32,
     pub root: String,

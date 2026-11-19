@@ -91,12 +91,14 @@ pub fn moved(before: &Snapshot, after: &Snapshot, scope: Option<&str>) -> Result
 
 /// Fingerprints and discovery limits for every file in the matching population.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct SnapshotBasis {
     pub sources: BTreeMap<String, String>,
     /// Workspace-wide discovery diagnostics, including exclusions without a captured file.
     pub diagnostics: Vec<crate::model::Diagnostic>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Basis {
     pub before: SnapshotBasis,
     pub after: SnapshotBasis,
@@ -126,6 +128,7 @@ impl Basis {
     }
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Location {
     pub file: String,
     pub line: usize,
@@ -141,6 +144,7 @@ impl From<&Site> for Location {
     }
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Pair {
     pub crate_name: String,
     pub class: &'static str,
@@ -162,6 +166,7 @@ impl From<&Change<'_>> for Pair {
     }
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Single {
     pub crate_name: String,
     pub class: &'static str,
@@ -180,6 +185,7 @@ impl From<(&Key, &Site)> for Single {
 }
 /// Every candidate site for a repeated native key; pairing is not a unique resolution.
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct Ambiguity {
     pub crate_name: String,
     pub class: &'static str,
@@ -188,6 +194,7 @@ pub struct Ambiguity {
     pub after: Vec<Location>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct VisibilityReport {
     pub schema: u32,
     pub scope: Option<String>,
@@ -201,6 +208,7 @@ pub struct VisibilityReport {
     pub limits: Vec<&'static str>,
 }
 #[derive(Debug, Serialize)]
+#[non_exhaustive]
 pub struct MoveReport {
     pub schema: u32,
     pub scope: Option<String>,

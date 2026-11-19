@@ -250,6 +250,14 @@ pub(crate) fn diff(
             ChangedDeclaration::Added { after } => ("added", after),
             ChangedDeclaration::Removed { before } => ("removed", before),
             ChangedDeclaration::Modified { after, .. } => ("modified", after.as_ref()),
+            // A change this text output does not know is named, not dropped;
+            // the JSON report carries it in full.
+            _ => {
+                println!(
+                    "changed: a declaration change of a kind this text output does not show; see --json"
+                );
+                continue;
+            }
         };
         println!(
             "{label}: {}:{} {} [{}]",

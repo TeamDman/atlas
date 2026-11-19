@@ -9,6 +9,7 @@ struct ProjectedLine {
 }
 
 /// One lexical view of Rust source shared by every line-based scan.
+#[non_exhaustive]
 pub struct RustSourceProjection {
     text: String,
     lines: Vec<ProjectedLine>,
