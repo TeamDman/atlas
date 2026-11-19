@@ -14,6 +14,7 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 use syn::{Item, spanned::Spanned};
 
+#[derive(Clone)]
 pub(super) struct StructShape {
     pub scope: Vec<String>,
     pub imports: BTreeMap<String, Vec<Vec<String>>>,
@@ -22,11 +23,13 @@ pub(super) struct StructShape {
     pub public: bool,
 }
 
+#[derive(Clone)]
 pub(super) struct TraitShape {
     pub methods: BTreeMap<String, Vec<Option<Site>>>,
     pub supported: bool,
 }
 
+#[derive(Clone)]
 pub(super) struct TraitImpl {
     pub scope: Vec<String>,
     pub imports: BTreeMap<String, Vec<Vec<String>>>,
@@ -36,6 +39,35 @@ pub(super) struct TraitImpl {
     pub supported: bool,
     pub methods: BTreeMap<String, Vec<Site>>,
     pub site: Site,
+}
+
+/// Scope-relative observations reusable when one physical file has several mounts.
+#[derive(Default)]
+pub(in crate::analysis) struct ReceiverFacts {
+    structs: BTreeMap<Vec<String>, Vec<StructShape>>,
+    inherent: BTreeSet<Site>,
+    traits: BTreeMap<Vec<String>, Vec<TraitShape>>,
+    impls: Vec<TraitImpl>,
+}
+
+pub(in crate::analysis) fn read(
+    source: &crate::source::Source,
+    file: &str,
+    ast: &syn::File,
+    tests: TestSelection,
+) -> ReceiverFacts {
+    let mut facts = ReceiverFacts::default();
+    collect(
+        &ast.items,
+        &[],
+        SyntaxSelection::Selected { source, tests },
+        file,
+        &mut facts.structs,
+        &mut facts.inherent,
+        &mut facts.traits,
+        &mut facts.impls,
+    );
+    facts
 }
 
 fn conditional(attrs: &[syn::Attribute]) -> bool {
@@ -235,22 +267,30 @@ impl Index {
                 continue;
             };
             let source = &sources[&file.path];
-            let ast = source.ast(&file.path)?;
-            let selection = SyntaxSelection::Selected {
-                source: source.source(),
-                tests,
-            };
+            let facts = source.receivers(&file.path, tests)?;
             for (scope, _) in contexts {
-                collect(
-                    &ast.items,
-                    scope,
-                    selection,
-                    &file.path,
-                    &mut self.structs,
-                    &mut self.inherent_sites,
-                    &mut self.traits,
-                    &mut self.impls,
-                );
+                for (path, shapes) in &facts.structs {
+                    let key = scope.iter().chain(path).cloned().collect();
+                    let shapes = shapes.iter().cloned().map(|mut shape| {
+                        shape.scope = scope.iter().chain(&shape.scope).cloned().collect();
+                        shape
+                    });
+                    self.structs.entry(key).or_default().extend(shapes);
+                }
+                self.inherent_sites.extend(facts.inherent.iter().cloned());
+                for (path, shapes) in &facts.traits {
+                    let key = scope.iter().chain(path).cloned().collect();
+                    self.traits
+                        .entry(key)
+                        .or_default()
+                        .extend(shapes.iter().cloned());
+                }
+                self.impls
+                    .extend(facts.impls.iter().cloned().map(|mut implementation| {
+                        implementation.scope =
+                            scope.iter().chain(&implementation.scope).cloned().collect();
+                        implementation
+                    }));
             }
         }
         Ok(())

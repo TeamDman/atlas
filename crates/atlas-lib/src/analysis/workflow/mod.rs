@@ -195,6 +195,9 @@ pub struct Workflow {
     pub function: String,
     pub module: Vec<String>,
     pub owner: Option<String>,
+    /// A free function written with unrestricted `pub` visibility.
+    #[serde(default)]
+    pub public_free_function: bool,
     #[serde(default)]
     pub type_parameters: Vec<String>,
     pub site: Site,

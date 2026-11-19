@@ -108,6 +108,131 @@ fn receiver_lookup_refuses_ambiguous_globs_and_generic_field_types() {
 }
 
 #[test]
+fn public_glob_free_function_is_a_candidate_only_when_unique() {
+    let (_, diagram) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod inner; pub use inner::*; pub fn run() { execute(); }",
+            ),
+            ("src/inner.rs", "pub fn execute() {}"),
+        ],
+        "run",
+        1,
+    );
+    assert!(diagram.nodes.iter().any(|n| n.label == "fn execute"));
+    assert!(
+        diagram
+            .edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    let (_, private) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod inner; pub use inner::*; pub fn run() { execute(); }",
+            ),
+            ("src/inner.rs", "fn execute() {}"),
+        ],
+        "run",
+        1,
+    );
+    assert!(!private.nodes.iter().any(|n| n.label == "fn execute"));
+    let (_, ambiguous) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod a; mod b; pub use a::*; pub use b::*; pub fn run() { execute(); }",
+            ),
+            ("src/a.rs", "pub fn execute() {}"),
+            ("src/b.rs", "pub fn execute() {}"),
+        ],
+        "run",
+        1,
+    );
+    assert!(!ambiguous.nodes.iter().any(|n| n.label == "fn execute"));
+    let (_, reexport_ambiguity) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod a; mod b; mod c; pub use b::*; pub use c::*; pub fn run() { execute(); }",
+            ),
+            ("src/a.rs", "pub fn execute() {}"),
+            ("src/b.rs", "pub use crate::a::execute;"),
+            ("src/c.rs", "pub fn execute() {}"),
+        ],
+        "run",
+        1,
+    );
+    assert!(
+        !reexport_ambiguity
+            .nodes
+            .iter()
+            .any(|n| n.label == "fn execute")
+    );
+}
+
+#[test]
+fn glob_candidate_crosses_packages_and_is_recomputed_after_source_changes() {
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        (
+            "app/src/lib.rs",
+            "use domain::dispatch; pub fn run() { dispatch(); }",
+        ),
+        ("domain/src/lib.rs", "mod inner; pub use inner::*;"),
+        ("domain/src/inner.rs", "pub fn dispatch() {}"),
+    ]);
+    let generate = || {
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let graph = discovery::scan_metadata(&metadata).unwrap();
+        workflow::expanded(
+            fixture.path(),
+            &metadata,
+            &graph,
+            "app/src/lib.rs",
+            "run",
+            1,
+        )
+        .unwrap()
+        .1
+    };
+    let before = generate();
+    assert!(before.nodes.iter().any(|n| n.label == "fn dispatch"));
+    assert!(
+        before
+            .edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    fixture.write("domain/src/inner.rs", "pub fn renamed() {}");
+    let after = generate();
+    assert!(!after.nodes.iter().any(|n| n.label == "fn dispatch"));
+    assert!(
+        !after
+            .edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+}
+
+#[test]
 fn trait_defaults_and_overrides_are_explicit_source_candidates() {
     let (_, d) = inspect(
         &[

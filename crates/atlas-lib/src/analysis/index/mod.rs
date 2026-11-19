@@ -3,7 +3,7 @@
 //! Resolution never chooses among ambiguous names; Analysis owns the syntax cache.
 mod build;
 mod mounts;
-mod receivers;
+pub(super) mod receivers;
 mod resolve;
 
 use super::{

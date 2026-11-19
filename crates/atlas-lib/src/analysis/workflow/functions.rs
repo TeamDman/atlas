@@ -15,6 +15,7 @@ pub(super) struct Function<'a> {
     pub(super) default_body: bool,
     module: Vec<String>,
     owner: Option<String>,
+    public_free: bool,
     parameters: Vec<String>,
     imports: std::collections::BTreeMap<String, Vec<Vec<String>>>,
     signature: &'a syn::Signature,
@@ -43,6 +44,7 @@ pub(super) fn collect<'a>(
                 default_body: false,
                 module: module.to_vec(),
                 owner: None,
+                public_free: matches!(f.vis, syn::Visibility::Public(_)),
                 parameters: f
                     .sig
                     .generics
@@ -75,6 +77,7 @@ pub(super) fn collect<'a>(
                             default_body: false,
                             module: module.to_vec(),
                             owner: Some(owner.clone()),
+                            public_free: false,
                             parameters: i
                                 .generics
                                 .type_params()
@@ -101,6 +104,7 @@ pub(super) fn collect<'a>(
                             module: module.to_vec(),
                             // `Self` is whichever type implements the trait.
                             owner: None,
+                            public_free: false,
                             parameters: t
                                 .generics
                                 .type_params()
@@ -200,6 +204,7 @@ impl Reader<'_> {
             function: function.name.clone(),
             module: function.module.clone(),
             owner: function.owner.clone(),
+            public_free_function: function.public_free,
             type_parameters: function.parameters.clone(),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),

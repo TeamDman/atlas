@@ -28,12 +28,7 @@ impl Index {
                 continue;
             };
             let parsed = sources[&file.path].workflow(&file.path, tests)?;
-            let defaults = crate::analysis::workflow::read_defaults(
-                sources[&file.path].source(),
-                &file.path,
-                sources[&file.path].ast(&file.path)?,
-                tests,
-            );
+            let defaults = sources[&file.path].defaults(&file.path, tests)?;
             for (scope, binary) in file_mounts {
                 let namespace = scope[0].split('#').next().unwrap_or(&scope[0]);
                 if !packages.contains(namespace) {

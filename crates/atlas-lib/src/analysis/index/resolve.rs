@@ -133,8 +133,62 @@ impl Index {
                 "ambiguous static call: {} candidates",
                 candidates.len()
             )),
-            None => Target::Summarized(format!("unresolved or external path {}", p.join("::"))),
+            None => self.glob_function_candidate(p).unwrap_or_else(|| {
+                Target::Summarized(format!("unresolved or external path {}", p.join("::")))
+            }),
         }
+    }
+    /// A public glob may expose a free function from an observed source module.
+    /// A single written match is only a candidate: conditional compilation,
+    /// macros and unobserved exports can change the actual namespace.
+    fn glob_function_candidate(&self, path: &[String]) -> Option<Target> {
+        let (name, parent) = path.split_last()?;
+        let found = self.glob_function_candidates(parent, name, &mut BTreeSet::new())?;
+        if found.len() == 1 {
+            Some(Target::Candidate(
+                *found.first()?,
+                "public glob reexport of a unique written free function; conditional, macro-generated and external competitors are not ruled out".into(),
+            ))
+        } else {
+            None
+        }
+    }
+    fn glob_function_candidates(
+        &self,
+        parent: &[String],
+        name: &str,
+        visited: &mut BTreeSet<Vec<String>>,
+    ) -> Option<BTreeSet<usize>> {
+        if !visited.insert(parent.to_vec()) {
+            return None;
+        }
+        let mut star = parent.to_vec();
+        star.push("*".into());
+        let modules = self.exports.get(&star)?;
+        let mut found = BTreeSet::new();
+        for module in modules {
+            let module = self.exported(module)?;
+            if !self.scopes.values().flatten().any(|scope| scope == &module) {
+                return None;
+            }
+            let mut candidate = module.clone();
+            candidate.push(name.to_owned());
+            let candidate = self.exported(&candidate)?;
+            if let Some(positions) = self.names.get(&candidate) {
+                for position in positions {
+                    if self.functions[*position].flow.public_free_function {
+                        found.insert(*position);
+                    }
+                }
+            }
+            let mut nested_star = module.clone();
+            nested_star.push("*".into());
+            if self.exports.contains_key(&nested_star) {
+                found.extend(self.glob_function_candidates(&module, name, visited)?);
+            }
+        }
+        visited.remove(parent);
+        Some(found)
     }
     /// Resolve a call in a function selected from this index. Positions from
     /// another index have no identity here, even when numerically in range.

@@ -50,4 +50,16 @@ fn a_lazy_analysis_parses_each_file_again() {
     // Today: capture's parse is not reused, so analysis parses every file
     // once more. atlas-6ln lowers this to zero for prepared analyses.
     assert_eq!(parse_count() - before, FILES);
+    let architecture = atlas_lib::architecture::Architecture {
+        schema: 1,
+        provenance: vec![],
+        modules: vec![],
+        workflows: vec![],
+    };
+    analysis.index(&architecture).expect("source index");
+    assert_eq!(
+        parse_count() - before,
+        FILES,
+        "receiver and default-body facts reuse the syntax observation"
+    );
 }
