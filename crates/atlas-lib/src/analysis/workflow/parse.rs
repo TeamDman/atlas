@@ -111,6 +111,7 @@ impl Reader<'_> {
                                 | Step::Match { label, .. }
                                 | Step::Branch { label, .. }
                                 | Step::Loop { label, .. }
+                                | Step::Block { label, .. }
                                 | Step::Exit { label, .. }
                                 | Step::Opaque { label, .. } => label,
                             };
@@ -162,7 +163,15 @@ impl Reader<'_> {
     fn expr(&self, expr: &Expr) -> Vec<Step> {
         let site = self.site(expr.span());
         match expr {
-            Expr::Block(b) if b.label.is_none() => self.block(&b.block),
+            Expr::Block(b) => match &b.label {
+                None => self.block(&b.block),
+                Some(label) => vec![Step::Block {
+                    label: format!("'{}: block", label.name.ident),
+                    body: self.block(&b.block),
+                    target: label.name.ident.to_string(),
+                    site,
+                }],
+            },
             // The steps run as written; the marker says the compiler does not
             // check the operations through the block's closing line.
             Expr::Unsafe(e) => {

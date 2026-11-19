@@ -88,6 +88,13 @@ pub enum Step {
         target: Option<String>,
         site: Site,
     },
+    /// A labelled block: its steps run once, and `break 'label` leaves it.
+    Block {
+        label: String,
+        body: Vec<Self>,
+        target: String,
+        site: Site,
+    },
     Exit {
         label: String,
         control: ExitKind,
@@ -134,6 +141,7 @@ impl Step {
             | Self::Branch { site, .. }
             | Self::Match { site, .. }
             | Self::Loop { site, .. }
+            | Self::Block { site, .. }
             | Self::Exit { site, .. }
             | Self::Opaque { site, .. } => site,
         }
@@ -286,6 +294,7 @@ fn write_steps(out: &mut String, steps: &[Step], depth: usize) {
             | Step::Branch { label, .. }
             | Step::Match { label, .. }
             | Step::Loop { label, .. }
+            | Step::Block { label, .. }
             | Step::Exit { label, .. } => (label.as_str(), ""),
             Step::Opaque {
                 label, fallible, ..
@@ -317,6 +326,10 @@ fn write_steps(out: &mut String, steps: &[Step], depth: usize) {
                 write_steps(out, head, depth + 1);
                 write_steps(out, body, depth + 1);
                 let _ = writeln!(out, "{pad}   repeat / exit loop");
+            }
+            Step::Block { body, .. } => {
+                write_steps(out, body, depth + 1);
+                let _ = writeln!(out, "{pad}   end of block");
             }
             _ => {}
         }

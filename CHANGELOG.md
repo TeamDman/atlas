@@ -6,6 +6,11 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws a labelled block (`'found: { ... }`) with its steps, and
+ `break 'found` goes to the step after the block. Before, the whole block was
+ one opaque step. An unlabelled `break` or `continue` inside still targets the
+ enclosing loop, and `continue 'found` reaches no target.
+- **Breaking (library):** `workflow::Step` has a `Block` variant.
 - `flow` draws the steps inside an `unsafe` block after an `unsafe block,
  through line N` marker, instead of one opaque step.
 - `flow` draws an array repeat `[value; N]` with its element expression as a

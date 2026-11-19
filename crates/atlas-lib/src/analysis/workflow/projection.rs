@@ -56,6 +56,8 @@ struct LoopTarget {
     /// A `while` condition: only a labelled transfer may name this loop, and
     /// an unlabelled one there is not valid Rust, so it reaches no target.
     labelled_only: bool,
+    /// A labelled block: only `break 'label` leaves it; it has no `continue`.
+    block: bool,
 }
 impl<'a> Builder<'a> {
     fn new(index: Option<&'a Index>, budget: usize, detail: Detail) -> Self {
@@ -272,6 +274,7 @@ impl<'a> Builder<'a> {
                 | Step::Branch { label, .. }
                 | Step::Match { label, .. }
                 | Step::Loop { label, .. }
+                | Step::Block { label, .. }
                 | Step::Exit { label, .. } => label.clone(),
             };
             let id = self.node(&label, step.site());
@@ -354,6 +357,7 @@ impl<'a> Builder<'a> {
                             header: id.clone(),
                             exit: exit.clone(),
                             labelled_only: true,
+                            block: false,
                         });
                     }
                     let tested = self.steps(head, vec![id.clone()]);
@@ -380,10 +384,27 @@ impl<'a> Builder<'a> {
                         header: id.clone(),
                         exit: exit.clone(),
                         labelled_only: false,
+                        block: false,
                     });
                     let ends = self.steps(body, vec![gate]);
                     self.loops.pop();
                     self.connect(ends, &id);
+                    vec![exit]
+                }
+                Step::Block {
+                    body, target, site, ..
+                } => {
+                    let exit = self.node("after labelled block", site);
+                    self.loops.push(LoopTarget {
+                        name: Some(target.clone()),
+                        header: id.clone(),
+                        exit: exit.clone(),
+                        labelled_only: true,
+                        block: true,
+                    });
+                    let ends = self.steps(body, vec![id.clone()]);
+                    self.loops.pop();
+                    self.connect(ends, &exit);
                     vec![exit]
                 }
                 Step::Exit { control, .. } => {
@@ -393,8 +414,14 @@ impl<'a> Builder<'a> {
                             .loops
                             .iter()
                             .rev()
-                            .find(|t| name.as_ref().is_none_or(|n| t.name.as_ref() == Some(n)))
+                            // An unlabelled transfer never names a block.
+                            .find(|t| match name {
+                                Some(n) => t.name.as_ref() == Some(n),
+                                None => !t.block,
+                            })
                             .filter(|t| name.is_some() || !t.labelled_only)
+                            // `continue 'label` cannot name a block.
+                            .filter(|t| !(t.block && matches!(control, ExitKind::Continue(_))))
                             .map(|t| {
                                 if matches!(control, ExitKind::Break(_)) {
                                     t.exit.clone()
@@ -576,6 +603,42 @@ mod loop_tests {
         assert!(continues[0].starts_with("while { if p() { continue 'a"));
         assert!(continues[1].starts_with("while { if p() { break 'a"));
         assert_eq!(targets(source, "break 'a"), ["after loop (if it exits)"]);
+    }
+
+    #[test]
+    fn break_label_leaves_a_labelled_block_and_plain_transfers_skip_it() {
+        let source = "fn f(){ loop { 'found: { if p() { break 'found; } if q() { break; } if r() { continue; } work(); } after(); } }";
+        assert_eq!(targets(source, "break 'found"), ["after labelled block"]);
+        // The unlabelled break and continue name the loop, not the block.
+        assert_eq!(
+            targets(source, "break"),
+            ["after labelled block", "after loop (if it exits)"]
+        );
+        assert_eq!(targets(source, "continue"), ["loop"]);
+        let diagram = crate::workflow::parse::parse(source, "lib.rs", "f")
+            .unwrap()
+            .diagram();
+        let after_block = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label == "after labelled block")
+            .unwrap();
+        let after = diagram.nodes.iter().find(|n| n.label == "after()").unwrap();
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == after_block.id && e.to == after.id)
+        );
+    }
+
+    #[test]
+    fn continue_cannot_name_a_labelled_block() {
+        let source = "fn f(){ 'b: { if p() { continue 'b; } } }";
+        assert_eq!(
+            targets(source, "continue"),
+            ["opaque control target (not resolved)"]
+        );
     }
 
     #[test]

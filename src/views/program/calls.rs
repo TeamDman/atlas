@@ -207,6 +207,7 @@ fn opaque(function: &str, steps: &[Step], out: &mut Vec<Observation>) {
                 opaque(function, head, out);
                 opaque(function, body, out);
             }
+            Step::Block { body, .. } => opaque(function, body, out),
             _ => {}
         }
     }
@@ -242,6 +243,11 @@ fn context(steps: &[Step], site: &Site) -> Vec<String> {
                     result.extend(context(head, site));
                     return result;
                 }
+                let mut result = vec![label.clone()];
+                result.extend(context(body, site));
+                return result;
+            }
+            Step::Block { label, body, .. } => {
                 let mut result = vec![label.clone()];
                 result.extend(context(body, site));
                 return result;

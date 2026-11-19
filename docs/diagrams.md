@@ -208,9 +208,11 @@ so it is not a step: the text output lists it under the heading and a diagram
 lists it in its notes.
 
 Some steps are *opaque*: Atlas knows they are there but does not look inside.
-Macro calls, closures, `async` and `try` blocks, labelled blocks and syntax
-Atlas does not support are opaque. An `unsafe` block shows its steps after a
-marker that names the line where the block ends. Atlas does not guess what they do.
+Macro calls, closures, `async` and `try` blocks and syntax Atlas does not
+support are opaque, and Atlas does not guess what they do. An `unsafe` block
+shows its steps after a marker that names the line where the block ends. A
+labelled block (`'found: { ... }`) shows its steps, and `break 'found` leaves
+it.
 
 **Expanding calls.** By default `flow` shows one function body. With
 `--depth 1` (up to 6), it also opens the functions that body calls, when it can

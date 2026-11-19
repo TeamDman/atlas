@@ -191,7 +191,7 @@ impl Reader<'_> {
             "Operands are evaluated before their enclosing operation; labels over 110 characters are shortened, source spans remain exact.",
             "Branches and loops show syntax, not feasibility, iteration counts or a control-flow proof.",
             "Each ? is a distinct residual decision after its operand, including conditions and return expressions.",
-            "Macros, closures, labelled blocks, deferred bodies and unsupported expressions are opaque; their effects are not inferred.",
+            "Macros, closures, deferred bodies and unsupported expressions are opaque; their effects are not inferred.",
         ];
 
         Workflow {
