@@ -1,11 +1,18 @@
-//! Discover selectable function bodies in written modules and impls.
+//! Discover selectable function bodies in written modules, impls and traits.
 //! Qualified selectors preserve duplicate-name refusals; this is not a declaration census.
+//! A trait's default body is selectable for `flow` but never a call target:
+//! an impl may override it.
 use super::{Workflow, parse::Reader};
 use crate::Result;
+use std::fmt::Write as _;
 use syn::{Item, spanned::Spanned};
 
 pub(super) struct Function<'a> {
     name: String,
+    /// `<Type as Trait>::method` for a trait impl's method.
+    trait_name: Option<String>,
+    /// A trait's default body: selectable, but not a call target.
+    pub(super) default_body: bool,
     module: Vec<String>,
     owner: Option<String>,
     parameters: Vec<String>,
@@ -32,6 +39,8 @@ pub(super) fn collect<'a>(
         match item {
             Item::Fn(f) => out.push(Function {
                 name: format!("{prefix}{}", f.sig.ident),
+                trait_name: None,
+                default_body: false,
                 module: module.to_vec(),
                 owner: None,
                 parameters: f
@@ -53,12 +62,17 @@ pub(super) fn collect<'a>(
             }
             Item::Impl(i) => {
                 let owner = reader.text(i.self_ty.span());
+                let implemented = i.trait_.as_ref().map(|(path, _)| reader.text(path.span()));
                 for member in &i.items {
                     if let syn::ImplItem::Fn(f) = member
                         && reader.selection.admits(f.span())
                     {
                         out.push(Function {
                             name: format!("{prefix}{owner}::{}", f.sig.ident),
+                            trait_name: implemented.as_ref().map(|implemented| {
+                                format!("{prefix}<{owner} as {implemented}>::{}", f.sig.ident)
+                            }),
+                            default_body: false,
                             module: module.to_vec(),
                             owner: Some(owner.clone()),
                             parameters: i
@@ -74,25 +88,98 @@ pub(super) fn collect<'a>(
                     }
                 }
             }
+            Item::Trait(t) => {
+                for member in &t.items {
+                    if let syn::TraitItem::Fn(f) = member
+                        && let Some(body) = &f.default
+                        && reader.selection.admits(f.span())
+                    {
+                        out.push(Function {
+                            name: format!("{prefix}{}::{}", t.ident, f.sig.ident),
+                            trait_name: None,
+                            default_body: true,
+                            module: module.to_vec(),
+                            // `Self` is whichever type implements the trait.
+                            owner: None,
+                            parameters: t
+                                .generics
+                                .type_params()
+                                .chain(f.sig.generics.type_params())
+                                .map(|p| p.ident.to_string())
+                                .collect(),
+                            imports: imports.clone(),
+                            signature: &f.sig,
+                            body,
+                        });
+                    }
+                }
+            }
             _ => {}
         }
     }
 }
+
+/// A `LINE` or `LINE:COLUMN` selector names the function whose name starts there.
+fn site_selector(selector: &str) -> Option<(usize, Option<usize>)> {
+    let (line, column) = match selector.split_once(':') {
+        Some((line, column)) => (line, Some(column.parse().ok()?)),
+        None => (selector, None),
+    };
+    Some((line.parse().ok()?, column))
+}
 impl Reader<'_> {
+    /// Select by name, qualified name, `<Type as Trait>::method`, or the
+    /// `LINE` / `LINE:COLUMN` where the function's name is written.
     pub(super) fn select(&self, functions: &[Function<'_>], selector: &str) -> Result<Workflow> {
+        let site = |f: &Function<'_>| self.site(f.signature.ident.span());
         let found: Vec<_> = functions
             .iter()
-            .filter(|f| {
-                f.name == selector
-                    || (!selector.contains("::") && f.name.rsplit("::").next() == Some(selector))
+            .filter(|f| match site_selector(selector) {
+                Some((line, column)) => {
+                    let at = site(f);
+                    at.line == line && column.is_none_or(|column| at.column + 1 == column)
+                }
+                None => {
+                    f.name == selector
+                        || f.trait_name.as_deref() == Some(selector)
+                        || (!selector.contains("::")
+                            && f.name.rsplit("::").next() == Some(selector))
+                }
             })
             .collect();
         let [function] = found.as_slice() else {
             let path = self.path;
             let count = found.len();
-            return Err(format!(
-                "workflow {path}::{selector}: expected one function, found {count}; use its qualified module/impl name"
-            ).into());
+            let mut message = format!(
+                "workflow {path}::{selector}: expected one function, found {count}; use its qualified module/impl name, <Type as Trait>::method, or the LINE where its name is written"
+            );
+            for f in &found {
+                let at = site(f);
+                let on_line = functions.iter().filter(|g| site(g).line == at.line).count();
+                let by_site = if on_line == 1 {
+                    at.line.to_string()
+                } else {
+                    format!("{}:{}", at.line, at.column + 1)
+                };
+                let by_name = f.trait_name.as_deref().unwrap_or(&f.name);
+                let unique = functions
+                    .iter()
+                    .filter(|g| g.name == by_name || g.trait_name.as_deref() == Some(by_name))
+                    .count()
+                    == 1;
+                let pick = if unique {
+                    format!("'{by_name}' or {by_site}")
+                } else {
+                    by_site
+                };
+                write!(
+                    message,
+                    "\n  {path}:{}: {} (--function {pick})",
+                    at.line, f.name
+                )
+                .expect("formatting into a String cannot fail");
+            }
+            return Err(message.into());
         };
         Ok(self.build(function))
     }
@@ -125,5 +212,76 @@ impl Reader<'_> {
             },
             limits: limits.into_iter().map(str::to_owned).collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::workflow::parse::parse;
+
+    const SOURCE: &str = "\
+pub trait Defaulted { fn perform(&self) { first(); } fn required(&self); }
+pub struct Both;
+pub trait One { fn run(&self); }
+pub trait Two { fn run(&self); }
+impl One for Both { fn run(&self) { first(); } }
+impl Two for Both { fn run(&self) { second(); } }
+#[cfg(unix)]
+pub fn entry() { first(); }
+#[cfg(not(unix))]
+pub fn entry() { second(); }
+";
+
+    fn calls(selector: &str) -> Vec<String> {
+        parse(SOURCE, "lib.rs", selector)
+            .unwrap_or_else(|e| panic!("{selector}: {e}"))
+            .calls
+            .into_iter()
+            .map(|call| call.spelling)
+            .collect()
+    }
+
+    #[test]
+    fn a_trait_default_body_is_selectable() {
+        assert_eq!(calls("perform"), ["first"]);
+        assert_eq!(calls("Defaulted::perform"), ["first"]);
+        assert!(parse(SOURCE, "lib.rs", "required").is_err());
+    }
+
+    #[test]
+    fn trait_qualified_and_site_selectors_pick_one_body() {
+        assert_eq!(calls("<Both as Two>::run"), ["second"]);
+        assert_eq!(calls("8"), ["first"]);
+        assert_eq!(calls("10:8"), ["second"]);
+    }
+
+    #[test]
+    fn an_ambiguous_selector_lists_each_candidate_and_its_selector() {
+        let error = parse(SOURCE, "lib.rs", "Both::run")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("found 2"), "{error}");
+        assert!(
+            error.contains("lib.rs:5: Both::run (--function '<Both as One>::run' or 5)"),
+            "{error}"
+        );
+        assert!(error.contains("lib.rs:6: Both::run (--function '<Both as Two>::run' or 6)"));
+        let error = parse(SOURCE, "lib.rs", "entry").unwrap_err().to_string();
+        assert!(error.contains("lib.rs:8: entry (--function 8)"), "{error}");
+        assert!(
+            error.contains("lib.rs:10: entry (--function 10)"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_trait_default_body_is_not_a_call_target() {
+        let parsed = crate::workflow::parse::parse_all(SOURCE, "lib.rs").expect("parse");
+        assert!(
+            !parsed
+                .functions
+                .iter()
+                .any(|flow| flow.function.ends_with("perform"))
+        );
     }
 }

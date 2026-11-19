@@ -178,6 +178,14 @@ cargo atlas flow --path src/main.rs --function main --depth 1 --backend pele
 cargo atlas flow --path src/main.rs --function main --detail control --backend pele
 ```
 
+`--function` takes the function's name, or a qualified name when the file has
+several: `module::name`, `Type::method`, `<Type as Trait>::method`, or
+`Trait::method` for a trait's default body. Two bodies with the same written
+name, such as `#[cfg]` alternatives, are picked by the line where the name is
+written (`--function 12`, or `12:8` with the column). When a selector matches
+more than one function, the error lists each one with the selector that picks
+it.
+
 `flow` shows the steps inside one function in the order they are written:
 each expression, every branch of an `if` or `match` (including guards), loops,
 early `return`s and every `?` that may return early.

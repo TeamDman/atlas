@@ -6,6 +6,12 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow --function` selects a trait's default body (`Trait::method`), a trait
+ impl's method as `<Type as Trait>::method`, and any function by the line
+ (or `LINE:COLUMN`) where its name is written. When a selector matches several
+ functions, the error lists each one's site and the selector that picks it.
+ A default body is never treated as a call target, because an impl may
+ override it.
 - `flow` follows a labelled `continue` or `break` written in a `while`
  condition to the loop it names; before, it led to an unresolved target. An
  unlabelled one there is not valid Rust and stays unresolved.

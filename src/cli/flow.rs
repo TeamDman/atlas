@@ -36,6 +36,9 @@ pub(super) struct Options {
     architecture: Option<PathBuf>,
     #[arg(long, requires = "function")]
     path: Option<String>,
+    /// The function in --path: its name, a qualified name (module::name,
+    /// Type::method, Trait::method for a default body, <Type as Trait>::method),
+    /// or the LINE (or LINE:COLUMN) where its name is written.
     #[arg(long, requires = "path")]
     function: Option<String>,
     #[command(flatten)]

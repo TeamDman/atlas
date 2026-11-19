@@ -52,6 +52,7 @@ pub(super) fn parse_ast(
     collect(&ast.items, &[], &reader, &mut functions);
     let functions = functions
         .iter()
+        .filter(|function| !function.default_body)
         .map(|function| reader.build(function))
         .collect();
     super::ParsedFile {
