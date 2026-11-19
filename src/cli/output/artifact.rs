@@ -19,6 +19,7 @@ pub(crate) struct Options {
     pub theme: Theme,
     /// Draw only the diagram in Pele images, without the title, notes and
     /// panel headings around it. The JSON evidence keeps all of them.
+    /// A `dependencies` drawing has nothing around it, so it is always bare.
     #[arg(long)]
     pub bare: bool,
     /// Output path; Pele defaults to target/atlas/NAME.svg. ASCII defaults to stdout.

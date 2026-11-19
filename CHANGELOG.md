@@ -6,6 +6,13 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `program --json` refuses `--out` and `--evidence-dir`, as `dependencies`
+ does, instead of ignoring them.
+- Text diagrams say `(1 site)`, not `(1 sites)`. `name --population` headings
+ read `1 match in population all`. The `--bare` help says a `dependencies`
+ drawing is always bare, and the top-level help says `flow` and `map` write
+ their JSON beside the drawing rather than taking `--json`.
+- docs/library.md no longer says a snapshot keeps syntax trees.
 - `flow` without `--depth` reads only the selected file and no longer captures
  the whole workspace: on a 1,400-file workspace it takes 0.09 s instead of
  2.6 s (16 s in a debug build). It still refuses to write over any `.rs` file

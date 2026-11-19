@@ -54,12 +54,13 @@ impl Renderer for Ascii {
         for edge in &diagram.edges {
             writeln!(
                 out,
-                "  [{}] --{} ({} sites)--> [{}]",
+                "  [{}] --{} ({} {})--> [{}]",
                 visible(labels[&edge.from]),
                 edge.label
                     .as_deref()
                     .unwrap_or_else(|| edge.evidence.label()),
                 edge.count(),
+                if edge.count() == 1 { "site" } else { "sites" },
                 visible(labels[&edge.to])
             )?;
         }

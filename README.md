@@ -85,8 +85,8 @@ they're formatted. You only need to review the 10 that changed.
 ```console
 $ cargo atlas dependencies --relation calls
 RELATIONSHIPS
-  [main.rs] --calls: main calls check (1 sites)--> [check.rs]
-  [main.rs] --calls: main calls parse (1 sites)--> [parse.rs]
+  [main.rs] --calls: main calls check (1 site)--> [check.rs]
+  [main.rs] --calls: main calls parse (1 site)--> [parse.rs]
 ```
 
 Add `--backend pele` to draw the same thing as an SVG image. Atlas can also

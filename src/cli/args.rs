@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
     version,
     bin_name = "cargo atlas",
     about = "Answer questions about how a Rust codebase is put together",
-    after_help = "Find your way around: census, name, module, dump\nReview a change: diff, moved, visibility, compare\nMeasure: spans, concentration, nontest-loc, comments\nDraw diagrams: dependencies, representations, flow, overview, program, map\nCheck architecture: delta, stages, policy, seams\n\nCommands read the Cargo project in the current directory, or the one given with --root.\nAdd --json for machine-readable output. Atlas never changes the code it reads.\nGuides: https://github.com/flowerornament/atlas#documentation"
+    after_help = "Find your way around: census, name, module, dump\nReview a change: diff, moved, visibility, compare\nMeasure: spans, concentration, nontest-loc, comments\nDraw diagrams: dependencies, representations, flow, overview, program, map\nCheck architecture: delta, stages, policy, seams\n\nCommands read the Cargo project in the current directory, or the one given with --root.\nAdd --json for machine-readable output; flow and map write their JSON evidence beside the drawing instead. Atlas never changes the code it reads.\nGuides: https://github.com/flowerornament/atlas#documentation"
 )]
 pub(super) struct Cli {
     /// Cargo project directory; defaults to the current directory. Positional ROOT remains supported.

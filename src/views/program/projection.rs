@@ -111,7 +111,8 @@ fn label(edge: &Connection) -> String {
         label.push('…');
     }
     if omitted > 0 {
-        write!(label, " (+{omitted} sites)").expect("formatting into a String cannot fail");
+        let unit = if omitted == 1 { "site" } else { "sites" };
+        write!(label, " (+{omitted} {unit})").expect("formatting into a String cannot fail");
     }
     label
 }

@@ -118,9 +118,14 @@ fn tally(text: &mut String, key: &str, tally: navigation::Tally) -> Result<()> {
 }
 fn name(report: &navigation::Name) -> Result<String> {
     let mut text = format!(
-        "cargo atlas name — {} · {} {} matches, {} hidden; ~{} textual references\n",
+        "cargo atlas name — {} · {} {} in population {}, {} hidden; ~{} textual references\n",
         report.query,
         report.matches.len(),
+        if report.matches.len() == 1 {
+            "match"
+        } else {
+            "matches"
+        },
         report.population.label(),
         report.hidden,
         report.refs_approx

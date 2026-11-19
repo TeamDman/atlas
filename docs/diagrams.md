@@ -70,12 +70,12 @@ another. There are three kinds of use, and you choose which to draw:
 
 ```text
 RELATIONSHIPS
-  [check.rs] --signature names: check.tree : Tree (1 sites)--> [parse.rs]
-  [emit.rs] --signature names: emit.program : &Checked (1 sites)--> [check.rs]
+  [check.rs] --signature names: check.tree : Tree (1 site)--> [parse.rs]
+  [emit.rs] --signature names: emit.program : &Checked (1 site)--> [check.rs]
 ```
 
 Read the first arrow as: in `check.rs`, the parameter `tree` of function
-`check` has type `Tree`, which is defined in `parse.rs`. "1 sites" means this
+`check` has type `Tree`, which is defined in `parse.rs`. "1 site" means this
 happens in one place.
 
 These are *qualified* relationships. Atlas followed the `use` statements and

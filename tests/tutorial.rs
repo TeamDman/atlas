@@ -82,7 +82,7 @@ fn navigation_commands_match_the_getting_started_guide() {
     assert!(name.contains("src/check.rs:10:check [Pub Fn]"));
     assert!(name.contains("src/lib.rs:2:check [Pub Mod]"));
     let calls = stdout(&atlas(root, &["dependencies", "--relation", "calls"]));
-    assert!(calls.contains("[main.rs] --calls: main calls check (1 sites)--> [check.rs]"));
+    assert!(calls.contains("[main.rs] --calls: main calls check (1 site)--> [check.rs]"));
     let contracts = stdout(&atlas(
         root,
         &[

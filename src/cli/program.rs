@@ -36,6 +36,9 @@ pub(super) fn run(
     metadata: &cargo_metadata::Metadata,
     options: &Options,
 ) -> Result<()> {
+    if options.json && (options.render.out.is_some() || options.render.evidence_dir.is_some()) {
+        return Err("--json writes stdout; omit --out and --evidence-dir".into());
+    }
     let (text, architecture) = architecture(root, Some(&options.architecture))?;
     let architecture = architecture.ok_or("program requires architecture boundaries")?;
     let snapshot = discovery::snapshot_metadata(metadata)?;

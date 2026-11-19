@@ -321,3 +321,49 @@ fn unexpanded_workflow_protects_sources_outside_src() {
         "tests/it.rs",
     );
 }
+
+#[test]
+fn program_json_refuses_output_paths_it_would_ignore() {
+    let f = fixture();
+    for extra in [
+        &["--out", "program.txt"][..],
+        &["--evidence-dir", "evidence"][..],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
+            .args(["program", "--architecture", "profile.json", "--json"])
+            .args(["--path", "src/lib.rs", "--function", "run"])
+            .args(extra)
+            .arg("--root")
+            .arg(f.path())
+            .output()
+            .expect("Atlas");
+        assert!(!result.status.success(), "{extra:?}");
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("--json writes stdout"),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!f.path().join("program.txt").exists() && !f.path().join("evidence").exists());
+    }
+}
+
+#[test]
+fn a_dependencies_drawing_is_the_same_with_or_without_bare() {
+    let f = fixture();
+    let draw = |out: &str, bare: bool| {
+        let result = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
+            .args(["dependencies", "--backend", "pele", "--out", out])
+            .args(bare.then_some("--bare"))
+            .arg("--root")
+            .arg(f.path())
+            .output()
+            .expect("Atlas");
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        fs::read(f.path().join(out)).expect("drawing")
+    };
+    assert_eq!(draw("plain.svg", false), draw("bare.svg", true));
+}

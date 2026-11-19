@@ -71,9 +71,10 @@ The sections below explain how the pieces fit together.
 ## Snapshots
 
 `discovery::snapshot_workspace` runs `cargo metadata`, finds each package's
-files, and reads them. The snapshot keeps each file's bytes, a parsed syntax
-tree for each file that parses, and a record of which packages and targets each
-file belongs to.
+files, and reads them. The snapshot keeps each file's bytes, the facts read
+from its syntax, and a record of which packages and targets each file belongs
+to. It does not keep syntax trees: an `Analysis` parses the files it needs
+again, once each.
 
 - A file that fails to parse stays in the snapshot. `Snapshot::source` still
   returns its bytes, and `syntax_error` explains the failure. Questions that

@@ -156,8 +156,8 @@ Source Calls: src
 +
 
 RELATIONSHIPS
-  [main.rs] --calls: main calls check (1 sites)--> [check.rs]
-  [main.rs] --calls: main calls parse (1 sites)--> [parse.rs]
+  [main.rs] --calls: main calls check (1 site)--> [check.rs]
+  [main.rs] --calls: main calls parse (1 site)--> [parse.rs]
 
 EVIDENCE / LIMITS
   - ... 11 unresolved/external call observations are not proved absent.
@@ -177,8 +177,8 @@ their function signatures:
 $ cargo atlas dependencies --relation signatures
 ...
 RELATIONSHIPS
-  [check.rs] --signature names: check.tree : Tree (1 sites)--> [parse.rs]
-  [emit.rs] --signature names: emit.program : &Checked (1 sites)--> [check.rs]
+  [check.rs] --signature names: check.tree : Tree (1 site)--> [parse.rs]
+  [emit.rs] --signature names: emit.program : &Checked (1 site)--> [check.rs]
 ```
 
 If you have Node.js installed, add `--backend pele` to draw the same diagram
