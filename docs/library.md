@@ -9,7 +9,7 @@ command line cannot express.
 
 ```toml
 [dependencies]
-atlas-lib = "0.4"
+atlas-lib = "0.5"
 ```
 
 The optional `clap` feature adds command-line parsing support for diagram

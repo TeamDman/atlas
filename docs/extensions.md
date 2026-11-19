@@ -127,7 +127,7 @@ own repository as a small binary crate that depends on an exact
 
 ```toml
 [dependencies]
-cargo-atlas = "=0.11.0"
+cargo-atlas = "=0.12.0"
 ```
 
 Useful pieces of the `Request`:
@@ -135,10 +135,30 @@ Useful pieces of the `Request`:
 - `input.snapshot.constant(&input.source, "NAME")` finds a constant. It refuses
   if the constant is missing or defined twice.
 - The constant's `value` lets you walk literal syntax: `.array()`, `.tuple()`,
-  `.string()`, `.path()`. Anything computed, such as a function call, stays
-  opaque. Adapters cannot evaluate Rust.
-- `input.snapshot.module_root("name")` finds a module's file. It accepts a full
-  module path, or a short name if only one module has that name.
+  `.string()`, `.path()` and `.call()`. A call whose callee is a plain path,
+  such as `Some(Part::Host)` or `Wrapper(1, X)`, arrives as its path and
+  arguments; Atlas records the syntax only, so a tuple struct, an enum variant
+  and a function call look the same. Anything else, such as a method call, a
+  macro or a callee with generic arguments, stays opaque. Adapters cannot
+  evaluate Rust.
+- `input.snapshot.module_root_from(&input.source, "name")` finds a module's
+  file in the package that declares it. It accepts a full module path, or a
+  short name if only one module in that package has that name. A module with
+  the same name in another workspace package, such as a build tool, is not a
+  candidate. `module_root("name")` does the same across every package.
+
+Constants reach the adapter as JSON, tagged by `kind`:
+
+```json
+{"kind": "string", "value": "build"}
+{"kind": "path",   "value": ["Role", "Pass"]}
+{"kind": "array",  "value": [ ... ]}
+{"kind": "tuple",  "value": [ ... ]}
+{"kind": "call",   "value": {"path": ["Some"], "args": [{"kind": "path", "value": ["Part", "Host"]}]}}
+{"kind": "opaque", "value": "make().finish()"}
+```
+
+New kinds may be added in later versions, so match with a fallback arm.
 
 Return an `Architecture` listing each `Module` with its `kind` (`Stage`,
 `Support`, `Instrument` and so on) and its entry function. Its `provenance`
@@ -152,7 +172,8 @@ You only need these if you write an adapter without the `cargo-atlas` crate.
 
 - One JSON request on standard input, one JSON reply on standard output.
   Diagnostics go to standard error.
-- Protocol version `1`, interface `project-declarations/v1`. The reply echoes
+- Protocol version `2`, interface `project-declarations/v1`. Version 2 added
+  each snapshot file's `packages` and the `call` literal kind. The reply echoes
   the request's snapshot ID and names its producer.
 - Size limits: request 16 MiB, reply 2 MiB, diagnostics 64 KiB.
 - A reply that is malformed, too large, for another snapshot or for another

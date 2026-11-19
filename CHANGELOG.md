@@ -4,6 +4,25 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## cargo-atlas 0.12.0 / atlas-lib 0.5.0
+
+Declaration adapters must be rebuilt against `cargo-atlas` 0.12.0: the adapter
+protocol is now version 2, and an adapter built for version 1 is refused with
+"unsupported adapter protocol".
+
+- Adapters can resolve a module in the package that declares it:
+ `snapshot.module_root_from(&input.source, "name")`. A module with the same
+ name in another workspace package is no longer a competing candidate.
+ `module_root` keeps its meaning (every package). Each snapshot file lists its
+ `packages`.
+- **Breaking (atlas-lib):** constants with call syntax whose callee is a plain
+ path, such as `Some(Part::Host)` or `Wrapper(1, X)`, arrive as
+ `Literal::Call { path, args }` (JSON kind `call`) instead of `Opaque`. This
+ is syntax only; nothing is evaluated. Method calls, macros and callees with
+ generic arguments stay `Opaque`.
+- **Breaking (atlas-lib):** `Literal` is `#[non_exhaustive]`. Add a wildcard arm
+ to matches on it.
+
 ## cargo-atlas 0.11.0 / atlas-lib 0.4.0
 
 The packages are renamed for crates.io, where `atlas` and `atlas-core` were

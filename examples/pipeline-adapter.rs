@@ -51,7 +51,7 @@ impl ProjectAdapter for Pipeline {
                 name: name.into(),
                 kind,
                 label: Some(label.string().ok_or("label must be a string")?.into()),
-                path: input.snapshot.module_root(name)?,
+                path: input.snapshot.module_root_from(&input.source, name)?,
                 entry: entry.string().ok_or("entry must be a string")?.into(),
                 types: vec![],
                 dependencies: vec![],

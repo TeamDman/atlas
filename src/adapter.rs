@@ -11,7 +11,8 @@ use std::{
     path::Path,
 };
 
-pub const PROTOCOL: u32 = 1;
+/// Version 2 adds each snapshot file's `packages` and the `call` literal kind.
+pub const PROTOCOL: u32 = 2;
 pub const INTERFACE: &str = "project-declarations/v1";
 pub const MAX_REQUEST_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_REPLY_BYTES: usize = 2 * 1024 * 1024;

@@ -17,6 +17,10 @@ pub struct InputFile {
     pub path: String,
     pub fingerprint: String,
     pub modules: Vec<Vec<String>>,
+    /// Cargo packages whose module trees include this file, sorted. Absent in
+    /// snapshots written before atlas-lib 0.5.0.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<String>,
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -44,6 +48,14 @@ impl Snapshot {
             .iter()
             .filter(|f| !f.test_only)
             .map(|f| InputFile {
+                packages: graph
+                    .files
+                    .iter()
+                    .filter(|other| other.path == f.path && !other.test_only)
+                    .map(|other| other.crate_name.clone())
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 path: f.path.clone(),
                 fingerprint: f.content_fingerprint.clone(),
                 modules: f
@@ -104,6 +116,9 @@ impl Snapshot {
                     "snapshot file paths must be unique, normalized and fingerprinted".into(),
                 );
             }
+            if f.packages.iter().any(String::is_empty) || !f.packages.is_sorted_by(|a, b| a < b) {
+                return Err("snapshot file packages must be named, sorted and unique".into());
+            }
         }
         for c in &self.constants {
             if !files.contains(c.site.path.as_str())
@@ -145,13 +160,39 @@ impl Snapshot {
         };
         Ok(one)
     }
-    /// Resolve a qualified module path, or a globally unique leaf selector.
-    /// A project may name modules by unique leaf (e.g. backend::admit as admit).
-    /// A leaf is not a claim of top-level Rust scope; ambiguity always refuses.
+    /// Resolve a qualified module path, or a leaf selector unique across every
+    /// package in the snapshot. A project may name modules by unique leaf (e.g.
+    /// backend::admit as admit). A leaf is not a claim of top-level Rust scope;
+    /// ambiguity always refuses. To look only in the package that declares the
+    /// selector, use [`Snapshot::module_root_from`].
     pub fn module_root(&self, name: &str) -> Result<String> {
-        let roots = self
+        Self::root_among(self.files.iter(), name)
+    }
+    /// Resolve `name` as [`Snapshot::module_root`] does, among only the files
+    /// that share a Cargo package with `source`, the file declaring the
+    /// selector. Another package's module with the same leaf is not a
+    /// candidate; ambiguity inside the scope still refuses.
+    pub fn module_root_from(&self, source: &str, name: &str) -> Result<String> {
+        let declaring = self
             .files
             .iter()
+            .find(|f| f.path == source)
+            .ok_or_else(|| format!("declared module {name}: {source} is not in the snapshot"))?;
+        if declaring.packages.is_empty() {
+            return Err(format!(
+                "declared module {name}: the snapshot records no package for {source}"
+            )
+            .into());
+        }
+        Self::root_among(
+            self.files
+                .iter()
+                .filter(|f| f.packages.iter().any(|p| declaring.packages.contains(p))),
+            name,
+        )
+    }
+    fn root_among<'a>(files: impl Iterator<Item = &'a InputFile>, name: &str) -> Result<String> {
+        let roots = files
             .filter(|f| {
                 f.modules.iter().any(|m| {
                     if name.contains("::") {

@@ -246,21 +246,37 @@ fn literal(source: &str, e: &syn::Expr) -> Literal {
             lit: syn::Lit::Str(s),
             ..
         }) => Literal::String(s.value()),
-        syn::Expr::Path(e)
-            if e.qself.is_none()
-                && e.path
-                    .segments
-                    .iter()
-                    .all(|s| matches!(s.arguments, syn::PathArguments::None)) =>
-        {
-            Literal::Path(
-                e.path
-                    .segments
-                    .iter()
-                    .map(|s| s.ident.to_string())
-                    .collect(),
-            )
-        }
-        _ => Literal::Opaque(crate::source_text::text(source, e.span())),
+        syn::Expr::Path(path) => plain_path(path).map_or_else(|| opaque(source, e), Literal::Path),
+        syn::Expr::Call(call) => match &*call.func {
+            syn::Expr::Path(callee) => plain_path(callee).map_or_else(
+                || opaque(source, e),
+                |path| Literal::Call {
+                    path,
+                    args: call.args.iter().map(|a| literal(source, a)).collect(),
+                },
+            ),
+            _ => opaque(source, e),
+        },
+        _ => opaque(source, e),
     }
+}
+
+fn opaque(source: &str, e: &syn::Expr) -> Literal {
+    Literal::Opaque(crate::source_text::text(source, e.span()))
+}
+
+/// Segments of a path with no generic arguments and no qualified self type.
+fn plain_path(e: &syn::ExprPath) -> Option<Vec<String>> {
+    (e.qself.is_none()
+        && e.path
+            .segments
+            .iter()
+            .all(|s| matches!(s.arguments, syn::PathArguments::None)))
+    .then(|| {
+        e.path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect()
+    })
 }

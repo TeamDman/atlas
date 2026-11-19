@@ -133,13 +133,22 @@ impl Constant {
     }
 }
 /// Supported literal syntax. Opaque expressions are preserved, never executed.
+/// New syntax forms may be added; match with a wildcard arm.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
+#[non_exhaustive]
 pub enum Literal {
     String(String),
     Array(Vec<Self>),
     Tuple(Vec<Self>),
     Path(Vec<String>),
+    /// A call whose callee is a plain path, such as `Some(Part::Host)` or
+    /// `Wrapper(1, X)`. This records syntax only: a tuple struct, an enum
+    /// variant and a function call look the same, and nothing is evaluated.
+    Call {
+        path: Vec<String>,
+        args: Vec<Self>,
+    },
     Opaque(String),
 }
 impl Literal {
@@ -167,6 +176,14 @@ impl Literal {
     pub fn path(&self) -> Option<&[String]> {
         if let Self::Path(v) = self {
             Some(v)
+        } else {
+            None
+        }
+    }
+    /// The callee path and arguments of a [`Literal::Call`].
+    pub fn call(&self) -> Option<(&[String], &[Self])> {
+        if let Self::Call { path, args } = self {
+            Some((path, args))
         } else {
             None
         }

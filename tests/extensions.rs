@@ -125,20 +125,58 @@ fn protocol_and_source_reference_checks_are_not_the_adapters_semantic_authority(
 #[test]
 fn constant_syntax_stays_opaque_when_computed_and_local_const_work_is_not_a_call() {
     let f = project();
-    f.write("src/lib.rs",&(SOURCE.to_owned()+"const COMPUTED:&[&str]=make();\n#[cfg(test)] const HIDDEN:&str=\"no\";\nfn local(){const X:crate::data::Graph=crate::data::Graph{n:1};}\n"));
+    f.write("src/lib.rs",&(SOURCE.to_owned()+"const COMPUTED:&[&str]=make().finish();\nconst EXPANDED:&[&str]=list!();\n#[cfg(test)] const HIDDEN:&str=\"no\";\nfn local(){const X:crate::data::Graph=crate::data::Graph{n:1};}\n"));
     let (request, facts) = input(&f);
-    assert!(matches!(
-        request
-            .snapshot
-            .constant("src/lib.rs", "COMPUTED")
-            .unwrap()
-            .value,
-        representations::Literal::Opaque(_)
-    ));
+    for name in ["COMPUTED", "EXPANDED"] {
+        assert!(matches!(
+            request.snapshot.constant("src/lib.rs", name).unwrap().value,
+            representations::Literal::Opaque(_)
+        ));
+    }
     assert!(request.snapshot.constant("src/lib.rs", "HIDDEN").is_err());
     assert!(request.snapshot.constant("src/lib.rs", "X").is_err());
     let local = facts.functions.iter().find(|f| f.name == "local").unwrap();
     assert!(!facts.constructors.iter().any(|c| c.from == local.id));
+}
+
+#[test]
+fn call_syntax_in_constants_arrives_structured_but_unevaluated() {
+    use representations::Literal;
+    let f = project();
+    f.write("src/lib.rs", &(SOURCE.to_owned() + "const ROWS:&[(&str,Option<Part>)]=&[(\"a\",Some(Part::Host)),(\"b\",None)];\nconst NAMED:Option<&str>=Some(\"x\");\nconst WRAPPED:Wrapper=Wrapper(1,X);\nconst GENERIC:Option<u8>=Option::<u8>::Some(1);\n"));
+    let (request, _) = input(&f);
+    let value = |name| {
+        request
+            .snapshot
+            .constant("src/lib.rs", name)
+            .unwrap()
+            .value
+            .clone()
+    };
+    let rows = value("ROWS");
+    let rows = rows.array().unwrap();
+    let (path, args) = rows[0].tuple().unwrap()[1].call().unwrap();
+    assert_eq!(path, ["Some"]);
+    assert_eq!(args[0].path().unwrap(), ["Part", "Host"]);
+    assert_eq!(rows[1].tuple().unwrap()[1].path().unwrap(), ["None"]);
+    let named = value("NAMED");
+    let (path, args) = named.call().unwrap();
+    assert_eq!(
+        (path, args[0].string()),
+        (&["Some".to_owned()][..], Some("x"))
+    );
+    let wrapped = value("WRAPPED");
+    let (path, args) = wrapped.call().unwrap();
+    assert_eq!(path, ["Wrapper"]);
+    assert!(matches!(&args[0], Literal::Opaque(text) if text == "1"));
+    assert_eq!(args[1].path().unwrap(), ["X"]);
+    // A callee with generic arguments is not a plain path.
+    assert!(matches!(value("GENERIC"), Literal::Opaque(_)));
+    // The JSON form adapters receive.
+    assert_eq!(
+        serde_json::to_value(&named).unwrap(),
+        serde_json::json!({"kind": "call", "value": {"path": ["Some"], "args": [{"kind": "string", "value": "x"}]}})
+    );
 }
 
 struct GraphOnly;
@@ -349,6 +387,74 @@ fn module_selectors_distinguish_qualified_paths_unique_leaves_and_ambiguity() {
     assert_eq!(
         request.snapshot.module_root("parent::child").unwrap(),
         "src/parent/child.rs"
+    );
+}
+
+#[test]
+fn scoped_module_selectors_look_only_in_the_declaring_package() {
+    // Two packages each have a module whose last segment is `check`.
+    let f = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[package]\nname='fixture'\nversion='0.1.0'\nedition='2024'\n[workspace]\nmembers=['tools']\n",
+        ),
+        ("src/lib.rs", "pub mod check;\npub mod report;"),
+        ("src/check.rs", "pub struct Finding;"),
+        ("src/report.rs", "pub struct Summary;"),
+        (
+            "tools/Cargo.toml",
+            "[package]\nname='tools'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        ("tools/src/lib.rs", "pub mod release;"),
+        ("tools/src/release/mod.rs", "pub mod check;"),
+        ("tools/src/release/check.rs", "pub struct Step;"),
+    ]);
+    let (request, _) = input(&f);
+    let snapshot = &request.snapshot;
+    let lib = snapshot
+        .files
+        .iter()
+        .find(|f| f.path == "src/lib.rs")
+        .unwrap();
+    assert_eq!(lib.packages, ["fixture"]);
+    assert_eq!(
+        snapshot.module_root_from("src/lib.rs", "check").unwrap(),
+        "src/check.rs"
+    );
+    assert_eq!(
+        snapshot
+            .module_root_from("tools/src/lib.rs", "check")
+            .unwrap(),
+        "tools/src/release/check.rs"
+    );
+    // The unscoped selector still sees both packages and refuses.
+    assert!(snapshot.module_root("check").is_err());
+    assert!(
+        snapshot
+            .module_root_from("src/missing.rs", "check")
+            .is_err()
+    );
+
+    // Ambiguity inside the declaring package still refuses.
+    f.write(
+        "src/lib.rs",
+        "pub mod check;\npub mod report;\npub mod nested;",
+    );
+    f.write("src/nested/mod.rs", "pub mod check;");
+    f.write("src/nested/check.rs", "pub struct Other;");
+    let (request, _) = input(&f);
+    assert!(
+        request
+            .snapshot
+            .module_root_from("src/lib.rs", "check")
+            .is_err()
+    );
+    assert_eq!(
+        request
+            .snapshot
+            .module_root_from("src/lib.rs", "nested::check")
+            .unwrap(),
+        "src/nested/check.rs"
     );
 }
 
