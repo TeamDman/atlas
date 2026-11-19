@@ -73,13 +73,7 @@ pub(crate) fn run(
                         }
                     }
                 }
-                if content_only > 0 {
-                    println!(
-                        "{content_only} more {} changed text with the same shape; --json lists {}",
-                        if content_only == 1 { "file" } else { "files" },
-                        if content_only == 1 { "it" } else { "them" },
-                    );
-                }
+                same_shape_note(content_only);
             }
         }
         Question::Visibility => {
@@ -197,6 +191,18 @@ fn pair(label: &str, row: &atlas_lib::review::moves::Pair) {
     );
 }
 
+/// One line for the files whose text changed but whose shape did not.
+fn same_shape_note(count: usize) {
+    if count > 0 {
+        let (noun, pronoun) = if count == 1 {
+            ("file", "it")
+        } else {
+            ("files", "them")
+        };
+        println!("{count} more {noun} changed text with the same shape; --json lists {pronoun}");
+    }
+}
+
 fn captures(
     root: &Path,
     metadata: &cargo_metadata::Metadata,
@@ -249,9 +255,16 @@ pub(crate) fn diff(
         "Declaration review against {commit} · {} subjects",
         population.label()
     );
-    for module in &report.shapes.changes {
+    for module in report.shapes.changes.iter().filter(|c| c.shape_changed) {
         println!("module shape: {}", module.file);
     }
+    let content_only = report
+        .shapes
+        .changes
+        .iter()
+        .filter(|c| !c.shape_changed)
+        .count();
+    same_shape_note(content_only);
     for change in &report.items.declarations {
         use atlas_lib::queries::navigation::ChangedDeclaration;
         let (label, version) = match change {
