@@ -13,10 +13,20 @@ You point it at a Cargo project and ask, from your terminal, a script or CI:
 Atlas only reads your code. It never edits, compiles or runs it, and every
 answer points to the file and line it came from, so you can check it yourself.
 
-<!-- Regenerate from the repository root, once per theme (dark, light):
-     cargo atlas representations --query examples/queries/atlas.json --panel contracts \
-       --backend pele --theme dark --out target/atlas/contracts-dark.svg
-     then copy the .svg into docs/images/. -->
+## What it looks like
+
+### Draw how your types move through the code
+
+Choose some types, and Atlas draws every function that takes, returns or builds
+them, grouped by the file each function lives in. Here is Atlas drawing its own
+three central types:
+
+```console
+$ cargo atlas representations --query examples/queries/atlas.json --panel contracts --backend pele
+```
+
+<!-- To refresh: run the command above with --theme dark and --theme light,
+     each with --out target/atlas/contracts-THEME.svg, and copy both into docs/images/. -->
 <a href="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-light.svg">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-dark.svg">
@@ -24,11 +34,8 @@ answer points to the file and line it came from, so you can check it yourself.
   </picture>
 </a>
 
-*Atlas drawing itself: the functions that return or build its three central
-types, grouped by file. Every arrow is a signature or a construction site in
-the source. Click for the full-size image.*
-
-## What it looks like
+Every arrow is a function signature or a place where the type is built. Click
+the image for full size.
 
 ### Find a type, and see how much depends on it
 
