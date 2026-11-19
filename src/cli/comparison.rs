@@ -70,11 +70,6 @@ pub(crate) fn run(
             graph,
             options.query.iter().map(|p| root.join(p)),
         ),
-        || {
-            options
-                .output
-                .backend
-                .render_view(View::Comparison(&comparison))
-        },
+        || options.output.render_view(View::Comparison(&comparison)),
     )
 }

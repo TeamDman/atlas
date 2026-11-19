@@ -5,9 +5,11 @@ pub(crate) mod comparison;
 pub(crate) mod overview;
 pub(crate) mod pele;
 pub(crate) mod representations;
+mod theme;
 use crate::{Result, diagram::Diagram};
 pub use ascii::Ascii;
 pub use pele::{Pele, mermaid};
+pub use theme::Theme;
 
 pub struct Document {
     pub suffix: &'static str,

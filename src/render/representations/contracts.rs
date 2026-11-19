@@ -1,5 +1,5 @@
 //! API contracts are type-level relations. All literal sites remain in their source titles.
-use super::{STYLE, Views, head, label, shape, xml};
+use super::{Palette, Views, head, label, shape, style, xml};
 use crate::Result;
 use std::{collections::BTreeMap, fmt::Write};
 pub(super) struct Edge {
@@ -8,7 +8,7 @@ pub(super) struct Edge {
     label: String,
     title: String,
 }
-pub(super) fn source(v: &Views) -> (String, Vec<Edge>) {
+pub(super) fn source(v: &Views, palette: &Palette) -> (String, Vec<Edge>) {
     let ids: BTreeMap<_, _> = v
         .types
         .iter()
@@ -110,7 +110,7 @@ pub(super) fn source(v: &Views) -> (String, Vec<Edge>) {
         writeln!(s, "{} -->|\"{}\"| {}", e.from, label(&e.label), e.to)
             .expect("formatting into a String cannot fail");
     }
-    s.push_str(STYLE);
+    s.push_str(&style(palette));
     (s, edges)
 }
 /// Check the pinned renderer's edge order/endpoints before attaching API provenance.

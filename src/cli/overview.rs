@@ -52,11 +52,6 @@ pub(crate) fn run(
             "snapshot": input.snapshot,
         }),
         &crate::cli::output::protected_inputs(metadata, graph, [program]),
-        || {
-            options
-                .output
-                .backend
-                .render_view(View::Overview(&overview))
-        },
+        || options.output.render_view(View::Overview(&overview)),
     )
 }

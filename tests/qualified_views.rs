@@ -169,7 +169,7 @@ fn inferred()->Graph {Default::default()}
     assert_eq!(admit.failures[0].0.name, "Refused");
     assert_eq!(admit.failures[0].1.wrappers, ["Result[1]", "Box[0]"]);
     let svg = String::from_utf8(
-        representations::pele(&v, representations::Panel::All)
+        representations::pele(&v, representations::Panel::All, atlas::render::Theme::Light)
             .unwrap()
             .primary
             .bytes,
@@ -208,7 +208,7 @@ fn comparison_has_aligned_values_revisions_and_no_invented_flow_edges() {
             .iter()
             .any(|c| c.subject.contains("explicitly calls"))
     );
-    let artifact = c.pele().unwrap();
+    let artifact = c.pele(atlas::render::Theme::Light).unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("baseline-pin") && svg.contains("candidate-pin"));
     assert!(svg.contains("ADDED") && svg.contains("Before") && svg.contains("After"));
@@ -403,7 +403,12 @@ fn error_type_returners_keep_their_err_position_in_the_producer_view() {
         preparation_functions: vec![],
     };
     let v = representations::project(&facts, &query).unwrap();
-    let artifact = representations::pele(&v, representations::Panel::Producers).unwrap();
+    let artifact = representations::pele(
+        &v,
+        representations::Panel::Producers,
+        atlas::render::Theme::Light,
+    )
+    .unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("return · Err") && svg.contains("reject"));
 }

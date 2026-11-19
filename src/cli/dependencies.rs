@@ -1,10 +1,10 @@
 //! Qualified file relationships with exact source witnesses.
-use crate::cli::output::{Backend, artifact as artifact_output};
+use crate::cli::output::artifact as artifact_output;
 use atlas::{
     Result,
     dependencies::{self, Relation},
     discovery,
-    render::{Ascii, Pele, Renderer},
+    render::View,
 };
 use clap::Args;
 use std::path::{Path, PathBuf};
@@ -45,9 +45,6 @@ pub(crate) fn run(
         "dependencies",
         &serde_json::json!({"view":view,"facts":facts}),
         &crate::cli::output::protected_inputs(metadata, graph, []),
-        || match options.output.backend {
-            Backend::Ascii => Ascii.render(&view.diagram),
-            Backend::Pele => Pele { html: false }.render(&view.diagram),
-        },
+        || options.output.render_view(View::Graph(&view.diagram)),
     )
 }

@@ -171,7 +171,12 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
     ] {
         let text = Ascii.render_view(view).unwrap();
         assert_eq!(text.primary.suffix, "txt");
-        let svg = Pele { html: false }.render_view(view).unwrap();
+        let svg = Pele {
+            html: false,
+            theme: atlas::render::Theme::Light,
+        }
+        .render_view(view)
+        .unwrap();
         assert_eq!(svg.primary.suffix, "svg");
         assert!(
             String::from_utf8(svg.primary.bytes)
@@ -190,12 +195,15 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
         error.downcast_ref::<UnsupportedView>().unwrap().0,
         "representations"
     );
-    let html = Pele { html: true }
-        .render_view(View::Representations(
-            &views,
-            representations::Panel::Producers,
-        ))
-        .unwrap();
+    let html = Pele {
+        html: true,
+        theme: atlas::render::Theme::Light,
+    }
+    .render_view(View::Representations(
+        &views,
+        representations::Panel::Producers,
+    ))
+    .unwrap();
     assert_eq!(html.primary.suffix, "html");
     assert!(html.companions.iter().any(|d| d.suffix == "svg"));
 }

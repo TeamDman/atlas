@@ -12,8 +12,9 @@ use crate::representations::{Reference, Views};
 use crate::{
     Result,
     render::{
-        Artifact, Document,
+        Artifact, Document, Theme,
         pele::{dimensions, html_text as xml, label, render_source_named},
+        theme::Palette,
     },
 };
 use clap::ValueEnum;
@@ -61,40 +62,51 @@ fn shape(r: &Reference) -> String {
         }
     )
 }
-const STYLE: &str = "classDef object fill:#e7f0f8,stroke:#3d6b8c,color:#183e59,font-size:24px,font-weight:bold\nclassDef operation fill:#ffffff,stroke:#8398a9,color:#253e51,font-size:19px\nclassDef detail fill:#f5f7f9,stroke:#b4c3cf,color:#3d586c,font-size:16px\nlinkStyle default stroke:#567b98,stroke-width:1.5px\n";
+fn style(p: &Palette) -> String {
+    format!(
+        "{}{}{}linkStyle default stroke:{},stroke-width:1.5px\n",
+        p.object.def("object", ",font-size:24px,font-weight:bold"),
+        p.operation.def("operation", ",font-size:19px"),
+        p.detail.def("detail", ",font-size:16px"),
+        p.link
+    )
+}
 fn head() -> String {
     "%%{init: {\"flowchart\":{\"curve\":\"basis\",\"nodeSpacing\":22,\"rankSpacing\":46,\"wrappingWidth\":220}}}%%\nflowchart LR\n".into()
 }
 
 /// Compose native Pele panels into one SVG. No source edges are added by composition.
-pub fn pele(v: &Views, panel: Panel) -> Result<Artifact> {
-    render(v, panel, false)
+pub fn pele(v: &Views, panel: Panel, theme: Theme) -> Result<Artifact> {
+    render(v, panel, false, theme.palette())
 }
-pub(crate) fn vertical(v: &Views, panel: Panel) -> Result<Artifact> {
-    render(v, panel, true)
+pub(crate) fn vertical(v: &Views, panel: Panel, palette: &Palette) -> Result<Artifact> {
+    render(v, panel, true, palette)
 }
-fn render(v: &Views, panel: Panel, vertical: bool) -> Result<Artifact> {
+fn render(v: &Views, panel: Panel, vertical: bool, palette: &Palette) -> Result<Artifact> {
     let sources = match panel {
         Panel::All => vec![
-            ("A  Representation contracts", contracts::source(v)),
+            ("A  Representation contracts", contracts::source(v, palette)),
             (
                 "B  Observed returners and literal construction",
-                (producers::source(v), vec![]),
+                (producers::source(v, palette), vec![]),
             ),
             (
                 "C  Preparation returners and producer calls",
-                (preparation::source(v), vec![]),
+                (preparation::source(v, palette), vec![]),
             ),
         ],
-        Panel::Contracts => vec![("A  Representation contracts", contracts::source(v))],
+        Panel::Contracts => vec![("A  Representation contracts", contracts::source(v, palette))],
         Panel::Producers => vec![(
             "B  Observed returners and literal construction",
-            (producers::source(v), vec![]),
+            (producers::source(v, palette), vec![]),
         )],
-        Panel::Retention => vec![("B  Direct field retention", (retention::source(v)?, vec![]))],
+        Panel::Retention => vec![(
+            "B  Direct field retention",
+            (retention::source(v, palette)?, vec![]),
+        )],
         Panel::Preparation => vec![(
             "C  Preparation returners and producer calls",
-            (preparation::source(v), vec![]),
+            (preparation::source(v, palette), vec![]),
         )],
     };
     let mut panels = Vec::new();
@@ -106,7 +118,7 @@ fn render(v: &Views, panel: Panel, vertical: bool) -> Result<Artifact> {
             source
         };
         writeln!(mmd, "%% {title}\n{source}").expect("formatting into a String cannot fail");
-        let svg = render_source_named(&source, &format!("atlas-representation-{index}"))?;
+        let svg = render_source_named(&source, &format!("atlas-representation-{index}"), palette)?;
         let svg = contracts::provenance(&svg, &edges)?;
         let svg = provenance(v, &svg);
         let (w, h) = dimensions(&svg)?;
@@ -126,16 +138,18 @@ fn render(v: &Views, panel: Panel, vertical: bool) -> Result<Artifact> {
         panels[0].3 + 320.
     };
     let mut out = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>{}</title><rect width=\"100%\" height=\"100%\" fill=\"white\"/>",
-        xml(&v.query.title)
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>{}</title><rect width=\"100%\" height=\"100%\" fill=\"{}\"/>",
+        xml(&v.query.title),
+        palette.background
     );
-    fn text(out: &mut String, x: f64, y: f64, size: u32, s: &str) {
+    let text = |out: &mut String, x: f64, y: f64, size: u32, s: &str| {
         write!(
             out,
-            "<text x=\"{x}\" y=\"{y}\" font-family=\"system-ui,sans-serif\" font-size=\"{size}\" fill=\"#24475f\">{}</text>",
+            "<text x=\"{x}\" y=\"{y}\" font-family=\"system-ui,sans-serif\" font-size=\"{size}\" fill=\"{}\">{}</text>",
+            palette.heading,
             xml(s),
         ).expect("formatting into a String cannot fail");
-    }
+    };
     text(&mut out, 40., 48., 32, &v.query.title);
     text(
         &mut out,

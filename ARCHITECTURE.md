@@ -75,7 +75,9 @@ flow uses the selected qualified index and its captured syntax cache.
 - **Application `views/`** selects representation, dependency, program, overview
   and comparison observations. **`render/`** produces ASCII/Pele documents from
   those native models without reopening source. A matrix or comparison table does
-  not become a generic dependency graph merely to use a renderer.
+  not become a generic dependency graph merely to use a renderer. `render/theme.rs`
+  owns every colour: renderers take a palette, and Pele's CSS variables are
+  resolved to concrete values in the markup, never in source-derived text.
 - **`cli/output/`** owns destination/default policy, evidence and artifact writes.
   Its artifact and diagram routes retain different documented formats/defaults;
   `files.rs` owns their shared collision policy and publication primitives.

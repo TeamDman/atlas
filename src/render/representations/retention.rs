@@ -17,7 +17,7 @@ fn cell(s: &str) -> String {
         .collect::<Vec<_>>()
         .join("<br/>")
 }
-pub(super) fn source(v: &Views) -> Result<String> {
+pub(super) fn source(v: &Views, palette: &super::Palette) -> Result<String> {
     let mut s = format!(
         "block-beta\ncolumns {}\ncorner[\"{}\"]\n",
         v.types.len() + 1,
@@ -64,7 +64,9 @@ pub(super) fn source(v: &Views) -> Result<String> {
             .expect("formatting into a String cannot fail");
         }
     }
-    s.push_str("classDef header fill:#e7f0f8,stroke:#9ab0c2,color:#24475f,font-size:18px\nclassDef empty fill:#ffffff,stroke:#dce5ec,color:#b7c5d0,font-size:17px\nclassDef stored fill:#e4edf5,stroke:#698ca7,color:#183e59,font-size:18px\n");
+    s.push_str(&palette.header.def("header", ",font-size:18px"));
+    s.push_str(&palette.empty.def("empty", ",font-size:17px"));
+    s.push_str(&palette.stored.def("stored", ",font-size:18px"));
     writeln!(s, "class {} header", headers.join(","))
         .expect("formatting into a String cannot fail");
     Ok(s)

@@ -1,5 +1,5 @@
 //! Returners, literals and explicit default calls occupy separate labelled cells.
-use super::{Views, label, shape};
+use super::{Palette, Views, label, shape};
 use std::fmt::Write;
 fn sites(rows: &[(crate::representations::Function, Vec<usize>)]) -> String {
     rows.iter()
@@ -7,7 +7,7 @@ fn sites(rows: &[(crate::representations::Function, Vec<usize>)]) -> String {
         .collect::<Vec<_>>()
         .join("<br/><br/>")
 }
-pub(super) fn source(v: &Views) -> String {
+pub(super) fn source(v: &Views, palette: &Palette) -> String {
     let mut s = "block-beta\ncolumns 3\n".to_owned();
     for (i, p) in v.producers.iter().enumerate() {
         let returns = p
@@ -40,6 +40,6 @@ pub(super) fn source(v: &Views) -> String {
             if literal.is_empty(){"none observed"}else{&literal},
             if defaults.is_empty(){"none observed"}else{&defaults}).expect("formatting into a String cannot fail");
     }
-    s.push_str("classDef default fill:#f5f7f9,stroke:#9ab0c2,color:#24475f,font-size:17px\n");
+    s.push_str(&palette.cell.def("default", ",font-size:17px"));
     s
 }

@@ -1,5 +1,5 @@
 //! Shared producer identities expose reuse without asserting shared runtime values.
-use super::{STYLE, Views, head, label};
+use super::{Palette, Views, head, label, style};
 use crate::representations::Function;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -15,7 +15,7 @@ pub(super) fn functions(v: &Views) -> Vec<&Function> {
     }
     functions.into_values().collect()
 }
-pub(super) fn source(v: &Views) -> String {
+pub(super) fn source(v: &Views, palette: &Palette) -> String {
     let mut s = head();
     let functions = functions(v);
     let ids: BTreeMap<_, _> = functions
@@ -70,6 +70,6 @@ pub(super) fn source(v: &Views) -> String {
     if functions.is_empty() {
         s.push_str("cempty[\"No returners in selected preparation files\"]:::detail\n");
     }
-    s.push_str(STYLE);
+    s.push_str(&style(palette));
     s
 }

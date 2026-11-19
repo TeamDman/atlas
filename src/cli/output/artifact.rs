@@ -1,6 +1,9 @@
 //! Explicit artifacts and evidence share one collision check before any writes.
 use super::{Backend, files::publish};
-use atlas::{Result, render::Artifact};
+use atlas::{
+    Result,
+    render::{Artifact, Theme, View},
+};
 use clap::Args;
 use std::{
     io::Write,
@@ -11,6 +14,9 @@ use std::{
 pub(crate) struct Options {
     #[arg(long, value_enum, default_value = "ascii")]
     pub backend: Backend,
+    /// Colours for Pele images.
+    #[arg(long, value_enum, default_value_t)]
+    pub theme: Theme,
     /// Output path; Pele defaults to target/atlas/NAME.svg. ASCII defaults to stdout.
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -18,6 +24,9 @@ pub(crate) struct Options {
     pub json: bool,
 }
 impl Options {
+    pub fn render_view(&self, view: View<'_>) -> Result<Artifact> {
+        self.backend.render_view(view, self.theme)
+    }
     pub fn emit(
         &self,
         root: &Path,

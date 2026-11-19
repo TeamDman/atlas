@@ -4,6 +4,17 @@ Atlas has two packages: the `atlas` CLI and library, and `atlas-core`. Versions
 below name the package they apply to. Neither is published to crates.io yet;
 depend on an exact Git revision.
 
+## atlas 0.10.0
+
+- Diagram images are dark by default. `--theme light` restores dark text on a
+ white background; every command with `--backend pele` accepts `--theme`.
+- SVG images carry concrete colours and an opaque background instead of CSS
+ variables, so viewers and converters that ignore CSS variables (such as
+ `rsvg-convert`) no longer draw solid black boxes.
+- **Breaking (library):** `render::Pele` has a `theme` field, and
+ `representations::pele`, `overview::pele` and `Comparison::pele` take a
+ `render::Theme`. `Pele::default()` is dark.
+
 ## atlas 0.9.0
 
 - **Breaking:** the project-specific overview adapter that earlier versions

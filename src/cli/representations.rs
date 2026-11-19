@@ -70,7 +70,6 @@ pub(crate) fn run(
         || {
             options
                 .output
-                .backend
                 .render_view(View::Representations(&views, options.panel))
         },
     )

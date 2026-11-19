@@ -7,7 +7,7 @@ use atlas::{
     Result,
     diagram::{Diagram, Query},
     model::SourceGraph,
-    render::{Artifact, Ascii, Pele, Renderer, mermaid},
+    render::{Artifact, Ascii, Pele, Renderer, Theme, mermaid},
 };
 use clap::{Args, ValueEnum};
 use std::{
@@ -227,10 +227,14 @@ pub(super) enum Backend {
     Pele,
 }
 impl Backend {
-    pub(crate) fn render_view(self, view: atlas::render::View<'_>) -> Result<Artifact> {
+    pub(crate) fn render_view(
+        self,
+        view: atlas::render::View<'_>,
+        theme: Theme,
+    ) -> Result<Artifact> {
         match self {
             Self::Ascii => Ascii.render_view(view),
-            Self::Pele => Pele { html: false }.render_view(view),
+            Self::Pele => Pele { html: false, theme }.render_view(view),
         }
     }
 }
@@ -245,6 +249,9 @@ pub(super) struct RenderOptions {
     pub(super) backend: Backend,
     #[arg(long, value_enum, default_value = "html")]
     pub(super) format: Format,
+    /// Colours for Pele images and pages.
+    #[arg(long, value_enum, default_value_t)]
+    pub(super) theme: Theme,
     /// Relative output paths are resolved against the Cargo workspace root.
     #[arg(long)]
     pub(super) out: Option<PathBuf>,
@@ -257,6 +264,7 @@ pub(super) fn render(options: &RenderOptions, diagram: &Diagram) -> Result<Artif
         Backend::Ascii => Ascii.render(diagram),
         Backend::Pele => Pele {
             html: options.format == Format::Html,
+            theme: options.theme,
         }
         .render(diagram),
     }

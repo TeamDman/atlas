@@ -1,15 +1,22 @@
 //! Mermaid emission and a self-contained pinned Pele bundle, evaluated by Node.
-use super::{Artifact, Document, Renderer, visible};
+use super::{Artifact, Document, Renderer, Theme, theme::Palette, visible};
 use crate::{Result, diagram::Diagram};
 use std::{collections::BTreeMap, fmt::Write as _};
 mod process;
 
+/// SVG (or an HTML page around it) drawn by the embedded Pele bundle.
+#[derive(Clone, Copy)]
 pub struct Pele {
+    /// Wrap the SVG in an HTML page with the diagram's notes and evidence links.
     pub html: bool,
+    pub theme: Theme,
 }
 impl Default for Pele {
     fn default() -> Self {
-        Self { html: true }
+        Self {
+            html: true,
+            theme: Theme::default(),
+        }
     }
 }
 pub(crate) fn label(text: &str) -> String {
@@ -81,9 +88,9 @@ impl Renderer for Pele {
     fn render_view(&self, view: super::View<'_>) -> Result<Artifact> {
         let artifact = match view {
             super::View::Graph(g) => return self.render(g),
-            super::View::Representations(v, p) => crate::representations::pele(v, p)?,
-            super::View::Comparison(c) => c.pele()?,
-            super::View::Overview(o) => crate::overview::pele(o)?,
+            super::View::Representations(v, p) => crate::representations::pele(v, p, self.theme)?,
+            super::View::Comparison(c) => c.pele(self.theme)?,
+            super::View::Overview(o) => crate::overview::pele(o, self.theme)?,
         };
         if !self.html {
             return Ok(artifact);
@@ -97,8 +104,14 @@ impl Renderer for Pele {
         Ok(Artifact {
             primary: Document {
                 suffix: "html",
-                bytes: html_document("Atlas source view", "Native source-derived view", &svg, "")
-                    .into_bytes(),
+                bytes: html_document(
+                    "Atlas source view",
+                    "Native source-derived view",
+                    &svg,
+                    "",
+                    self.theme.palette(),
+                )
+                .into_bytes(),
             },
             companions,
         })
@@ -106,7 +119,7 @@ impl Renderer for Pele {
 
     fn render(&self, diagram: &Diagram) -> Result<Artifact> {
         let source = mermaid(diagram)?;
-        let svg = render_source(&source)?;
+        let svg = render_source(&source, self.theme.palette())?;
         let (suffix, bytes) = if self.html {
             let mut notes = String::new();
             for note in &diagram.notes {
@@ -146,7 +159,14 @@ impl Renderer for Pele {
             );
             (
                 "html",
-                html_document(&diagram.title, &diagram.summary(), &svg, &details).into_bytes(),
+                html_document(
+                    &diagram.title,
+                    &diagram.summary(),
+                    &svg,
+                    &details,
+                    self.theme.palette(),
+                )
+                .into_bytes(),
             )
         } else {
             ("svg", svg.as_bytes().to_vec())
@@ -169,12 +189,17 @@ impl Renderer for Pele {
 }
 
 /// Render native Pele input with the same embedded bundle as diagram rendering.
-pub(crate) fn render_source(source: &str) -> Result<String> {
-    render_source_named(source, "atlas")
+pub(crate) fn render_source(source: &str, palette: &Palette) -> Result<String> {
+    render_source_named(source, "atlas", palette)
 }
 
-pub(crate) fn render_source_named(source: &str, prefix: &str) -> Result<String> {
-    process::render(source, prefix)
+/// Render with a distinct ID prefix, so composed panels keep unique IDs. The
+/// result carries the palette's concrete colours and an opaque background.
+pub(crate) fn render_source_named(source: &str, prefix: &str, palette: &Palette) -> Result<String> {
+    Ok(super::theme::resolve(
+        &process::render(source, prefix)?,
+        palette,
+    ))
 }
 
 /// Read native Pele geometry before composing independent panels.
@@ -194,12 +219,22 @@ pub(crate) fn dimensions(svg: &str) -> Result<(f64, f64)> {
     Ok((v[2], v[3]))
 }
 
-fn html_document(title: &str, summary: &str, svg: &str, details: &str) -> String {
+fn html_document(
+    title: &str,
+    summary: &str,
+    svg: &str,
+    details: &str,
+    palette: &Palette,
+) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{0}</title><style>body{{font:15px system-ui;margin:24px;color:#222;background:#fff}}.diagram{{overflow:auto;border:1px solid #ddd;padding:16px}}svg{{max-width:none!important}}li{{margin:8px 0}}</style><h1>{0}</h1><p>{1}</p><div class=\"diagram\">{2}</div>{3}</html>",
+        "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{0}</title><style>body{{font:15px system-ui;margin:24px;color:{4};background:{5}}}a{{color:{6}}}.diagram{{overflow:auto;border:1px solid {7};padding:16px}}svg{{max-width:none!important}}li{{margin:8px 0}}</style><h1>{0}</h1><p>{1}</p><div class=\"diagram\">{2}</div>{3}</html>",
         html_text(title),
         html_text(summary),
         svg,
-        details
+        details,
+        palette.text,
+        palette.background,
+        palette.link,
+        palette.border,
     )
 }

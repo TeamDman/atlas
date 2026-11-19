@@ -36,6 +36,16 @@ choose another location. Atlas also saves:
 `flow`, `map` and `program` wrap the image in an HTML page by default. Add
 `--format svg` to get the image alone.
 
+Images are dark by default. Add `--theme light` for dark text on a white
+background, for example to print a diagram or embed it in a light page:
+
+```sh
+atlas dependencies --relation calls --backend pele --theme light
+```
+
+The colours are written into the SVG itself, so the image looks the same in
+a browser, an image viewer or a converter such as `rsvg-convert`.
+
 ## Which files depend on which
 
 ```sh
