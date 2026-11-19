@@ -81,7 +81,13 @@ fi
 pinned_candidate="$candidate" pinned_at="$at" pinned_target="$target" pinned_remote="$remote_tip"
 echo "land: pinned ${pinned_candidate:0:12} for $bookmark (on ${pinned_target:0:12}); gate: $gate"
 
+# The default gate links target/gate.log to this run's log; drop any older link
+# so a failure never points at a previous run.
+rm -f target/gate.log
 if ! bash -c "$gate"; then
+  if [ -e target/gate.log ]; then
+    echo "land: gate output: $(cd target && pwd -P)/$(readlink target/gate.log)" >&2
+  fi
   refuse "gate failed ($gate); nothing published"
 fi
 

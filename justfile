@@ -4,14 +4,9 @@ lint:
     cargo clippy --workspace --all-targets -- -D warnings
 test:
     cargo test --workspace --locked
+# The local gate; scripts/check.sh lists its steps and keeps each run's log.
 check:
-    cargo fmt --check
-    cargo clippy --workspace --all-targets --locked -- -D warnings
-    cargo test --workspace --locked
-    cargo clippy -p atlas-lib --no-default-features --all-targets --locked -- -D warnings
-    cargo test -p atlas-lib --no-default-features --locked
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
-    npm test
+    scripts/check.sh
 build:
     cargo build --release --locked
 verify-vendor:

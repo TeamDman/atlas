@@ -13,7 +13,9 @@ a parse failure counted as zero) is especially valuable.
 - npm, only to verify or update the vendored Pele renderer.
 
 ```sh
-just check          # format, strict Clippy, all tests, rustdoc, renderer tests
+just check          # format, strict Clippy, all tests, rustdoc, renderer tests;
+                    # each run's output is kept in target/gate/, the newest
+                    # linked as target/gate.log, and a failure names its step
 just check-install  # install the binary and exercise it outside the checkout
 just verify-vendor  # check the vendored Pele bundle against its lockfile
 ```
