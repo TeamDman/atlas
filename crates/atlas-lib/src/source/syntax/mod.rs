@@ -18,18 +18,10 @@ pub(super) struct Facts {
     pub modules: Vec<(String, Option<String>, bool)>,
 }
 pub(super) fn read(path: &Path, projection: &RustSourceProjection) -> Result<Facts, SyntaxError> {
-    read_tree(path, projection).map(|(facts, _)| facts)
-}
-/// The facts and the tree they were read from, for a caller that reads more
-/// from the same parse.
-pub(super) fn read_tree(
-    path: &Path,
-    projection: &RustSourceProjection,
-) -> Result<(Facts, syn::File), SyntaxError> {
     let ast = parse_file(projection.text()).map_err(SyntaxError::from)?;
     let mut walk = walk::Walk::new(path, projection);
     walk.visit_file(&ast);
-    Ok((walk.finish()?, ast))
+    walk.finish()
 }
 
 std::thread_local! {
