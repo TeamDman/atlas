@@ -1,6 +1,7 @@
 //! Exact repository discovery and read-only JJ/Git identity resolution.
 use super::{Revision, output};
 use crate::{Result, discovery::Snapshot};
+use std::fmt::Write as _;
 use std::{
     collections::BTreeSet,
     fs,
@@ -78,7 +79,8 @@ impl GitStore {
                 "--no-graph",
                 "-T",
                 "commit_id ++ \"\\n\"",
-            ]))?;
+            ]))
+            .map_err(|error| jj_refusal(revision, &error.to_string()))?;
             let ids = reading.lines().collect::<Vec<_>>();
             if ids.len() != 1 {
                 return Err(format!(
@@ -283,5 +285,86 @@ fn same_bytes(a: &Path, b: &Path) -> Result<bool> {
         }
         a.consume(count);
         b.consume(count);
+    }
+}
+
+/// Explain a revision jj refused: Atlas reads revisions through jj in a jj
+/// workspace, so a git spelling such as `HEAD~1` fails there.
+fn jj_refusal(revision: &str, error: &str) -> Box<dyn std::error::Error + Send + Sync> {
+    let mut message = format!(
+        "revision `{revision}` was read as a jj revision, because this is a jj workspace, and jj refused it: {}",
+        error.trim()
+    );
+    if let Some(spelling) = jj_spelling(revision) {
+        write!(
+            message,
+            "; jj keeps git's HEAD at `@-`, the parent of the working-copy change `@`, so the commit git calls `{revision}` is `{spelling}` (or give a commit id)"
+        )
+        .expect("formatting into a String cannot fail");
+    } else {
+        message.push_str(
+            "; give a jj revision such as `@-` (the working copy's parent) or a commit id",
+        );
+    }
+    message.into()
+}
+
+/// The jj spelling of a git `HEAD`, `HEAD~N`, `HEAD^` chain, assuming jj keeps
+/// git's HEAD at the working copy's parent, as it does in a colocated
+/// repository. Other spellings, including second parents (`^2`), get none.
+fn jj_spelling(revision: &str) -> Option<String> {
+    let mut rest = revision.strip_prefix("HEAD")?;
+    let mut generations = 1usize;
+    while let Some(first) = rest.chars().next() {
+        rest = &rest[1..];
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let count = if digits == 0 {
+            1
+        } else {
+            rest[..digits].parse().ok()?
+        };
+        rest = &rest[digits..];
+        match first {
+            '~' => generations = generations.checked_add(count)?,
+            '^' if count == 1 => generations = generations.checked_add(1)?,
+            '^' if count == 0 => {}
+            _ => return None,
+        }
+    }
+    (generations <= 64).then(|| format!("@{}", "-".repeat(generations)))
+}
+
+#[cfg(test)]
+mod spelling_tests {
+    use super::{jj_refusal, jj_spelling};
+
+    #[test]
+    fn git_head_chains_get_their_jj_spelling() {
+        for (git, jj) in [
+            ("HEAD", "@-"),
+            ("HEAD~", "@--"),
+            ("HEAD~1", "@--"),
+            ("HEAD^", "@--"),
+            ("HEAD~~4", "@------"),
+            ("HEAD^^", "@---"),
+            ("HEAD~3^", "@-----"),
+        ] {
+            assert_eq!(jj_spelling(git).as_deref(), Some(jj), "{git}");
+        }
+        for other in ["main", "@-", "HEAD^2", "HEAD~x", "HEADS", "abc123"] {
+            assert_eq!(jj_spelling(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn a_refusal_says_it_read_a_jj_revision() {
+        let message = jj_refusal("HEAD~~4", "Error: Revision `HEAD` doesn't exist\n").to_string();
+        assert!(message.contains("read as a jj revision"), "{message}");
+        assert!(
+            message.contains("git calls `HEAD~~4` is `@------`"),
+            "{message}"
+        );
+        let message = jj_refusal("nope", "Error: Revision `nope` doesn't exist").to_string();
+        assert!(message.contains("such as `@-`"), "{message}");
     }
 }

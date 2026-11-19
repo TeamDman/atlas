@@ -147,7 +147,8 @@ Some features need more tools:
   the drawing code is built into Atlas.
 - **Comparing commits** needs Git and `tar`. If your project uses
   [jj](https://github.com/jj-vcs/jj), Atlas also needs `jj`, and you name
-  commits the jj way (`@-` instead of `HEAD~1`).
+  commits the jj way: `@-` is the change before the one you are working on.
+  If you give a git spelling such as `HEAD~1`, Atlas says what jj calls it.
 
 To get the same Atlas every time, for example in CI, add `--version <version>`
 to the install command. To try unreleased changes, install from the

@@ -4,6 +4,12 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## Unreleased
+
+- In a jj workspace, a revision jj cannot resolve says Atlas read it as a jj
+ revision. A git `HEAD`, `HEAD~N` or `HEAD^` spelling also gets its jj
+ spelling: jj keeps git's HEAD at `@-`, so `HEAD~1` is `@--`.
+
 ## cargo-atlas 0.17.0 / atlas-lib 0.7.0
 
 - **Breaking (library):** atlas-lib's public report, fact, step and view
