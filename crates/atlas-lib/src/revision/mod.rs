@@ -81,6 +81,35 @@ impl GitStore {
         if !result.root.join("Cargo.toml").is_file() {
             return Err("revision lacks a root Cargo.toml; subdirectory workspaces are not supported by revision comparison".into());
         }
+        // A standalone package walks up for a workspace; one around the
+        // extraction directory would claim it and Cargo would refuse.
+        if !declares_workspace(&result.root.join("Cargo.toml"))?
+            && let Some(enclosing) = enclosing_workspace(&result.root)
+        {
+            return Err(format!(
+                "the revision was extracted to {}, inside the Cargo workspace {}; Cargo would read the revision's standalone package as part of it. Point TMPDIR at a directory outside any Cargo workspace",
+                result.root.display(),
+                enclosing.display()
+            )
+            .into());
+        }
         Ok(result)
     }
+}
+
+/// Whether a manifest has a `[workspace]` table. An unreadable manifest
+/// counts as one, as Cargo would also stop there.
+fn declares_workspace(manifest: &Path) -> Result<bool> {
+    let text = std::fs::read_to_string(manifest)?;
+    Ok(text
+        .parse::<toml::Table>()
+        .map_or(true, |table| table.contains_key("workspace")))
+}
+
+/// The nearest manifest above `directory` that declares a workspace.
+fn enclosing_workspace(directory: &Path) -> Option<PathBuf> {
+    directory.ancestors().skip(1).find_map(|ancestor| {
+        let manifest = ancestor.join("Cargo.toml");
+        (manifest.is_file() && declares_workspace(&manifest).unwrap_or(true)).then_some(manifest)
+    })
 }

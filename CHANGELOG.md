@@ -6,6 +6,10 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `diff`, `moved` and `visibility` refuse, naming the directories, when the
+ revision is extracted inside another Cargo workspace (for example with TMPDIR
+ inside a checkout) and the revision's own package declares no workspace.
+ Before, Cargo refused with a message about the unrelated workspace.
 - `diff` no longer lists a file whose text changed but whose measured shape
  did not (same non-test lines, top-level items and largest block): it counts
  them in one line, with or without `--items`. The JSON keeps every changed

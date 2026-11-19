@@ -70,3 +70,52 @@ fn inherited_git_environment_cannot_redirect_revision_identity() {
             .is_empty()
     );
 }
+
+#[test]
+fn a_revision_extracted_inside_another_workspace_is_refused_by_name() {
+    // A standalone package; its revision is extracted under a TMPDIR that an
+    // unrelated workspace encloses, so Cargo would claim it.
+    let project = Fixture::new(&[("src/lib.rs", "pub fn value() {}\n")]);
+    project.write(
+        "Cargo.toml",
+        "[package]\nname = \"standalone\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
+    );
+    commit(&project);
+    let outer = Fixture::new(&[]);
+    outer.write("Cargo.toml", "[workspace]\nmembers = []\n");
+    let temp = outer.path().join("tmp");
+    std::fs::create_dir_all(&temp).expect("temp directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
+        .args(["diff", "HEAD", "--root"])
+        .arg(project.path())
+        .env("TMPDIR", &temp)
+        .output()
+        .expect("Atlas");
+    assert!(!output.status.success());
+    let error = String::from_utf8_lossy(&output.stderr);
+    assert!(error.contains("inside the Cargo workspace"), "{error}");
+    assert!(error.contains("atlas-revision-"), "{error}");
+    assert!(error.contains("TMPDIR"), "{error}");
+}
+
+#[test]
+fn a_revision_with_its_own_workspace_is_reviewed_inside_another() {
+    // The fixture's manifest declares its own `[workspace]`.
+    let project = Fixture::new(&[("src/lib.rs", "pub fn value() {}\n")]);
+    commit(&project);
+    let outer = Fixture::new(&[]);
+    outer.write("Cargo.toml", "[workspace]\nmembers = []\n");
+    let temp = outer.path().join("tmp");
+    std::fs::create_dir_all(&temp).expect("temp directory");
+    let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
+        .args(["diff", "HEAD", "--root"])
+        .arg(project.path())
+        .env("TMPDIR", &temp)
+        .output()
+        .expect("Atlas");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
