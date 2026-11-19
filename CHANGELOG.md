@@ -6,6 +6,9 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws `future.await` as the future's own steps, then one await step,
+ instead of one opaque step. It does not show when or how often the future is
+ polled.
 - `flow` draws a labelled block (`'found: { ... }`) with its steps, and
  `break 'found` goes to the step after the block. Before, the whole block was
  one opaque step. An unlabelled `break` or `continue` inside still targets the

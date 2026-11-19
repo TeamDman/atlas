@@ -437,6 +437,9 @@ impl Reader<'_> {
                 steps.push(self.action(expr));
                 steps
             }
+            // The operand runs, then the await; when and how often the
+            // future is polled is not shown.
+            Expr::Await(e) => self.with_operand(expr, &e.base),
             // The element is evaluated once; the length is a constant.
             Expr::Repeat(e) => self.with_operand(expr, &e.expr),
             Expr::Range(e) => {
@@ -525,6 +528,26 @@ mod tests {
                 .iter()
                 .any(|n| n.contains("f declares struct Inner; at lib.rs:5")),
             "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn an_await_shows_its_operand_then_the_await() {
+        let flow = parse(
+            "async fn f() { let x = fetch(id()).await?; done(x); }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        assert_eq!(
+            labels(&flow.steps),
+            [
+                "id()",
+                "fetch(id())",
+                "fetch(id()).await",
+                "x = propagate ?",
+                "done(x)"
+            ]
         );
     }
 

@@ -212,7 +212,8 @@ Macro calls, closures, `async` and `try` blocks and syntax Atlas does not
 support are opaque, and Atlas does not guess what they do. An `unsafe` block
 shows its steps after a marker that names the line where the block ends. A
 labelled block (`'found: { ... }`) shows its steps, and `break 'found` leaves
-it.
+it. `x.await` shows `x`'s steps, then one await step; when the future is
+polled is not shown.
 
 **Expanding calls.** By default `flow` shows one function body. With
 `--depth 1` (up to 6), it also opens the functions that body calls, when it can
