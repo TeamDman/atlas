@@ -51,6 +51,9 @@ struct LoopTarget {
     name: Option<String>,
     header: String,
     exit: String,
+    /// A `while` condition: only a labelled transfer may name this loop, and
+    /// an unlabelled one there is not valid Rust, so it reaches no target.
+    labelled_only: bool,
 }
 impl<'a> Builder<'a> {
     fn new(index: Option<&'a Index>, budget: usize, detail: Detail) -> Self {
@@ -324,12 +327,26 @@ impl<'a> Builder<'a> {
                     target,
                     ..
                 } => {
+                    // A labelled transfer in a `while` condition names this
+                    // loop, so its target is registered before the condition.
+                    let exit = self.node("after loop (if it exits)", site);
+                    let header = *form == LoopKind::While;
+                    if header {
+                        self.loops.push(LoopTarget {
+                            name: target.clone(),
+                            header: id.clone(),
+                            exit: exit.clone(),
+                            labelled_only: true,
+                        });
+                    }
                     let tested = self.steps(head, vec![id.clone()]);
+                    if header {
+                        self.loops.pop();
+                    }
                     let test = self.node("loop header result", site);
                     self.connect(tested, &test);
                     let gate = self.node("loop body (when entered)", site);
                     self.edge(&test, &gate, Some("enter"));
-                    let exit = self.node("after loop (if it exits)", site);
                     if *form != LoopKind::Infinite {
                         self.edge(
                             &test,
@@ -345,6 +362,7 @@ impl<'a> Builder<'a> {
                         name: target.clone(),
                         header: id.clone(),
                         exit: exit.clone(),
+                        labelled_only: false,
                     });
                     let ends = self.steps(body, vec![gate]);
                     self.loops.pop();
@@ -359,6 +377,7 @@ impl<'a> Builder<'a> {
                             .iter()
                             .rev()
                             .find(|t| name.as_ref().is_none_or(|n| t.name.as_ref() == Some(n)))
+                            .filter(|t| name.is_some() || !t.labelled_only)
                             .map(|t| {
                                 if matches!(control, ExitKind::Break(_)) {
                                     t.exit.clone()
@@ -511,5 +530,44 @@ mod loop_tests {
         let header = diagram.nodes.iter().find(|n| n.id == edge.to).unwrap();
         assert_eq!(header.label, "loop");
         assert_ne!(header.id, "flow-1");
+    }
+
+    /// The target of each transfer whose label starts with `jump`.
+    fn targets(source: &str, jump: &str) -> Vec<String> {
+        let diagram = crate::workflow::parse::parse(source, "lib.rs", "f")
+            .unwrap()
+            .diagram();
+        diagram.validate().unwrap();
+        diagram
+            .nodes
+            .iter()
+            .filter(|n| n.label.starts_with(jump))
+            .map(|n| {
+                let edge = diagram.edges.iter().find(|e| e.from == n.id).unwrap();
+                let to = diagram.nodes.iter().find(|t| t.id == edge.to).unwrap();
+                to.label.clone()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn labelled_transfers_in_a_while_condition_reach_their_loop() {
+        let source = "fn f(){'a: while { if p() { continue 'a; } q() } { 'b: while { if p() { break 'a; } if q() { continue 'b; } r() } { s(); } } after();}";
+        // A loop's header node is labelled with its condition.
+        let continues = targets(source, "continue");
+        assert_eq!(continues.len(), 2, "{continues:?}");
+        assert!(continues[0].starts_with("while { if p() { continue 'a"));
+        assert!(continues[1].starts_with("while { if p() { break 'a"));
+        assert_eq!(targets(source, "break 'a"), ["after loop (if it exits)"]);
+    }
+
+    #[test]
+    fn an_unlabelled_transfer_in_a_while_condition_is_not_resolved() {
+        // Rust refuses it; Atlas must not pick the enclosing loop instead.
+        let source = "fn f(){ loop { while { if p() { continue; } q() } { s(); } } }";
+        assert_eq!(
+            targets(source, "continue"),
+            ["opaque control target (not resolved)"]
+        );
     }
 }

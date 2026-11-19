@@ -4,6 +4,12 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## Unreleased
+
+- `flow` follows a labelled `continue` or `break` written in a `while`
+ condition to the loop it names; before, it led to an unresolved target. An
+ unlabelled one there is not valid Rust and stays unresolved.
+
 ## cargo-atlas 0.16.0 / atlas-lib 0.6.0
 
 - `moved` no longer reports relocations against unchanged source. Equal bodies
