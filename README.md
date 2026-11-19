@@ -113,7 +113,7 @@ You need Rust 1.99.1 or newer.
 
 ```sh
 cargo install --locked --git https://github.com/flowerornament/atlas.git atlas
-atlas --version    # should print "atlas 0.9.0" or later
+atlas --version    # should print "atlas 0.10.0" or later
 ```
 
 If `atlas --version` prints something else, a different program called
