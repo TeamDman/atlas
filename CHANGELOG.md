@@ -6,6 +6,12 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` without `--depth` reads only the selected file and no longer captures
+ the whole workspace: on a 1,400-file workspace it takes 0.09 s instead of
+ 2.6 s (16 s in a debug build). It still refuses to write over any `.rs` file
+ under a workspace package, found by walking the directories without reading
+ them.
+- **Library:** `discovery::source_paths` lists those files.
 - `dependencies --json` with a `--scope` lists only the facts incident to the
  scope: calls, references and constructions with an end in a scoped file, the
  unresolved calls and types written there, and the functions and types at

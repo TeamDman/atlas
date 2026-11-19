@@ -302,3 +302,22 @@ fn unexpanded_workflow_protects_other_project_sources_without_parsing_their_ast(
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn unexpanded_workflow_protects_sources_outside_src() {
+    let f = fixture();
+    f.write("tests/it.rs", "#[test]\nfn it() {}\n");
+    refuses(
+        &f,
+        &[
+            "flow",
+            "--path",
+            "src/lib.rs",
+            "--function",
+            "run",
+            "--out",
+            "tests/it.rs",
+        ],
+        "tests/it.rs",
+    );
+}

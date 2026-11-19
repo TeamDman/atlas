@@ -1,7 +1,7 @@
 //! Source-body control and bounded expansion; raw workflow evidence stays distinct from presentation.
 use super::{
     json,
-    output::{self, Backend, RenderOptions, protected_inputs, render},
+    output::{self, Backend, RenderOptions, protected_paths, render},
     profile::architecture,
 };
 use cargo_atlas::{
@@ -76,8 +76,9 @@ pub(super) fn run(
         }
         anchors
     };
-    let snapshot = discovery::snapshot_metadata(metadata)?;
-    let graph = snapshot.graph();
+    // Depth zero reads only the selected bodies; its inputs are protected
+    // from a path walk rather than a capture of the whole workspace.
+    let mut sources = Vec::new();
     let (flows, mut diagram) = if options.depth > 0 {
         let path = options
             .path
@@ -87,11 +88,20 @@ pub(super) fn run(
             .function
             .as_deref()
             .ok_or("--depth needs --function")?;
+        let snapshot = discovery::snapshot_metadata(metadata)?;
+        sources.extend(
+            snapshot
+                .graph()
+                .files
+                .iter()
+                .map(|file| metadata.workspace_root.join(&file.path).into_std_path_buf()),
+        );
         let analysis = atlas_lib::analysis::Analysis::new(&snapshot)?;
         let (flow, diagram) =
             analysis.expanded_with_detail(path, function, options.depth, options.detail)?;
         (vec![(function.to_owned(), flow)], diagram)
     } else {
+        sources = discovery::source_paths(metadata)?;
         let selections: Vec<_> = anchors
             .iter()
             .map(|a| (a.path.as_str(), a.function.as_str()))
@@ -116,9 +126,9 @@ pub(super) fn run(
         root,
         &options.render,
         &query,
-        protected_inputs(
+        protected_paths(
             metadata,
-            graph,
+            sources,
             options
                 .architecture
                 .iter()

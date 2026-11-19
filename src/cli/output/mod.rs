@@ -281,6 +281,22 @@ pub(super) fn protected_inputs(
     graph: &cargo_atlas::model::SourceGraph,
     extra: impl IntoIterator<Item = PathBuf>,
 ) -> Vec<PathBuf> {
+    protected_paths(
+        metadata,
+        graph
+            .files
+            .iter()
+            .map(|file| metadata.workspace_root.join(&file.path).into_std_path_buf()),
+        extra,
+    )
+}
+/// The manifests and configuration every command protects, plus `sources`
+/// and `extra`.
+pub(super) fn protected_paths(
+    metadata: &cargo_metadata::Metadata,
+    sources: impl IntoIterator<Item = PathBuf>,
+    extra: impl IntoIterator<Item = PathBuf>,
+) -> Vec<PathBuf> {
     metadata
         .workspace_packages()
         .into_iter()
@@ -307,12 +323,7 @@ pub(super) fn protected_inputs(
                 .join("rust-toolchain.toml")
                 .into_std_path_buf(),
         ])
-        .chain(
-            graph
-                .files
-                .iter()
-                .map(|file| metadata.workspace_root.join(&file.path).into_std_path_buf()),
-        )
+        .chain(sources)
         .chain(extra)
         .collect()
 }

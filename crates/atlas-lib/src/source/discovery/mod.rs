@@ -449,6 +449,39 @@ fn has_symlink(root: &Path, path: &Path) -> Result<bool> {
     Ok(false)
 }
 
+/// Every `.rs` file under each workspace package's directory, outside
+/// `target` and hidden directories, without reading any of them or following
+/// symlinks. It is a superset of the sources a capture records (`src/` and
+/// target entry points), for protecting inputs when no capture is needed;
+/// a `#[path]` module outside its package directory is not listed.
+pub fn source_paths(metadata: &Metadata) -> Result<Vec<PathBuf>> {
+    fn walk(dir: &Path, out: &mut BTreeSet<PathBuf>) -> Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let kind = entry.file_type()?;
+            let hidden = entry.file_name().to_string_lossy().starts_with('.');
+            if kind.is_dir() && !hidden && entry.file_name() != "target" {
+                walk(&path, out)?;
+            } else if kind.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|e| e.eq_ignore_ascii_case("rs"))
+            {
+                out.insert(path);
+            }
+        }
+        Ok(())
+    }
+    let mut out = BTreeSet::new();
+    for package in metadata.workspace_packages() {
+        if let Some(dir) = package.manifest_path.as_std_path().parent() {
+            walk(dir, &mut out)?;
+        }
+    }
+    Ok(out.into_iter().collect())
+}
+
 fn collect_rs_files(
     dir: &Path,
     paths: &mut BTreeSet<PathBuf>,
