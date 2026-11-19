@@ -15,6 +15,8 @@ pub use items::{Field, Item, ItemKind, TestRegions, Visibility};
 pub use lexical::RustSourceProjection;
 pub use scan::non_test_loc;
 use std::{collections::BTreeSet, path::Path, sync::Arc};
+#[doc(hidden)]
+pub use syntax::parse_count;
 pub(crate) use syntax::parse_file;
 pub use syntax::{
     attributes::attributes_require_test_or_features,

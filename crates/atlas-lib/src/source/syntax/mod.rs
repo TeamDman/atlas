@@ -24,9 +24,22 @@ pub(super) fn read(path: &Path, projection: &RustSourceProjection) -> Result<Fac
     walk.finish()
 }
 
+std::thread_local! {
+    /// Files parsed on this thread. Capture and analysis parse on the calling
+    /// thread, so a test reading this before and after sees only its own work.
+    static PARSES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+/// How many files this thread has parsed into syntax trees so far. For tests
+/// and measurement only; the value has no meaning across threads.
+#[doc(hidden)]
+pub fn parse_count() -> usize {
+    PARSES.with(std::cell::Cell::get)
+}
+
 /// syn recognizes the preamble; reparsing its blanked prefix preserves original
 /// byte coordinates, which syn::parse_file otherwise rebases after BOM/shebang.
 pub(crate) fn parse_file(text: &str) -> syn::Result<syn::File> {
+    PARSES.with(|count| count.set(count.get() + 1));
     let mut ast = syn::parse_file(text)?;
     let bom = if text.starts_with('\u{feff}') {
         '\u{feff}'.len_utf8()
