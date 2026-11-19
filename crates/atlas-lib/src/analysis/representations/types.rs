@@ -189,3 +189,109 @@ impl Literal {
         }
     }
 }
+
+/// The file an observation ID (`path:line:column`) was written in.
+fn file_of(id: &str) -> &str {
+    let mut parts = id.rsplitn(3, ':');
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(_), Some(_), Some(path)) => path,
+        _ => id,
+    }
+}
+
+impl Facts {
+    /// The observations incident to the files `in_scope` admits: every call,
+    /// reference and construction with an end in them, the unresolved calls
+    /// and types written in them, and the functions and types at both ends.
+    /// Nothing is resolved anew; observations elsewhere are left out, not
+    /// changed, and the limitations say so.
+    #[must_use]
+    pub fn incident(&self, scope: &str, in_scope: impl Fn(&str) -> bool) -> Self {
+        let touches = |from: &str, to: &str| in_scope(file_of(from)) || in_scope(file_of(to));
+        let calls: Vec<_> = self
+            .calls
+            .iter()
+            .filter(|c| touches(&c.from, &c.to))
+            .cloned()
+            .collect();
+        let references: Vec<_> = self
+            .references
+            .iter()
+            .filter(|r| touches(&r.from, &r.to))
+            .cloned()
+            .collect();
+        let built = |list: &[Constructor]| -> Vec<Constructor> {
+            list.iter()
+                .filter(|c| touches(&c.from, &c.to))
+                .cloned()
+                .collect()
+        };
+        let (constructors, default_calls) = (built(&self.constructors), built(&self.default_calls));
+        let mut ends: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
+        for (from, to) in calls
+            .iter()
+            .map(|c| (&c.from, &c.to))
+            .chain(references.iter().map(|r| (&r.from, &r.to)))
+            .chain(constructors.iter().map(|c| (&c.from, &c.to)))
+            .chain(default_calls.iter().map(|c| (&c.from, &c.to)))
+        {
+            ends.insert(from);
+            ends.insert(to);
+        }
+        let functions: Vec<_> = self
+            .functions
+            .iter()
+            .filter(|f| in_scope(&f.file) || ends.contains(f.id.as_str()))
+            .cloned()
+            .collect();
+        let types: Vec<_> = self
+            .types
+            .iter()
+            .filter(|t| in_scope(&t.file) || ends.contains(t.id.as_str()))
+            .cloned()
+            .collect();
+        let files: std::collections::BTreeSet<String> = functions
+            .iter()
+            .map(|f| f.file.clone())
+            .chain(types.iter().map(|t| t.file.clone()))
+            .collect();
+        let mut limitations = self.limitations.clone();
+        limitations.push(format!(
+            "Only observations incident to `{scope}` are listed; the analysis read the whole workspace."
+        ));
+        Self {
+            schema: self.schema,
+            types,
+            functions,
+            references,
+            constructors,
+            constants: self
+                .constants
+                .iter()
+                .filter(|c| in_scope(&c.site.path))
+                .cloned()
+                .collect(),
+            default_calls,
+            calls,
+            unknown_types: self
+                .unknown_types
+                .iter()
+                .filter(|u| in_scope(file_of(&u.from)))
+                .cloned()
+                .collect(),
+            unknown_calls: self
+                .unknown_calls
+                .iter()
+                .filter(|u| in_scope(file_of(&u.from)))
+                .cloned()
+                .collect(),
+            fingerprints: self
+                .fingerprints
+                .iter()
+                .filter(|(path, _)| in_scope(path) || files.contains(path))
+                .cloned()
+                .collect(),
+            limitations,
+        }
+    }
+}

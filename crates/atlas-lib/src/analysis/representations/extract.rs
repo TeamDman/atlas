@@ -203,6 +203,43 @@ pub(in crate::analysis) fn from_selected_sources(
     graph: &SourceGraph,
     tests: crate::population::TestSelection,
 ) -> Result<Facts> {
+    // Collect first, one syntax tree at a time; the index below reuses the
+    // workflow facts each visit cached.
+    let mut records = Vec::new();
+    let mut literals = Vec::new();
+    let mut constants = Vec::new();
+    for file in graph
+        .physical_files()
+        .filter(|f| tests.admits_file(f.test_only))
+    {
+        let parsed = &sources[&file.path];
+        let source = parsed.text();
+        let selection = crate::population::SyntaxSelection::Selected {
+            source: parsed.source(),
+            tests,
+        };
+        let c = parsed.visit_once(&file.path, tests, |ast| {
+            let mut c = Collector {
+                file: &file.path,
+                source,
+                selection,
+                parameters: BTreeSet::new(),
+                trait_impl: false,
+                module: vec![],
+                imports: crate::workflow::facts::imports(&ast.items, selection),
+                owner: None,
+                function: None,
+                records: vec![],
+                constructors: vec![],
+                constants: vec![],
+            };
+            c.visit_file(ast);
+            (c.constants, c.records, c.constructors)
+        })?;
+        constants.extend(c.0);
+        records.extend(c.1);
+        literals.extend(c.2);
+    }
     let index = Index::from_selected_sources(
         sources,
         metadata,
@@ -215,38 +252,6 @@ pub(in crate::analysis) fn from_selected_sources(
         },
         tests,
     )?;
-    let mut records = Vec::new();
-    let mut literals = Vec::new();
-    let mut constants = Vec::new();
-    for file in graph
-        .physical_files()
-        .filter(|f| tests.admits_file(f.test_only))
-    {
-        let parsed = &sources[&file.path];
-        let (source, ast) = (parsed.text(), parsed.ast(&file.path)?);
-        let selection = crate::population::SyntaxSelection::Selected {
-            source: parsed.source(),
-            tests,
-        };
-        let mut c = Collector {
-            file: &file.path,
-            source,
-            selection,
-            parameters: BTreeSet::new(),
-            trait_impl: false,
-            module: vec![],
-            imports: crate::workflow::facts::imports(&ast.items, selection),
-            owner: None,
-            function: None,
-            records: vec![],
-            constructors: vec![],
-            constants: vec![],
-        };
-        c.visit_file(ast);
-        constants.extend(c.constants);
-        records.extend(c.records);
-        literals.extend(c.constructors);
-    }
     let mut addresses = Addresses::new();
     for r in records.iter().filter(|r| r.signature.is_none()) {
         for mut scope in index.scopes(&r.file, &r.module) {

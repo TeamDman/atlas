@@ -362,3 +362,72 @@ fn named_and_positional_workflows_use_the_same_output_identity() {
     assert_eq!(legacy.stdout, named.stdout);
     assert_eq!(original_files, files());
 }
+
+#[test]
+fn scoped_dependency_evidence_keeps_only_incident_facts_unless_asked() {
+    let f = Fixture::new(&[
+        ("src/lib.rs", "pub mod a;\npub mod b;\npub mod c;\n"),
+        (
+            "src/a.rs",
+            "pub fn call_b() { crate::b::work(); missing::gone(); }\n",
+        ),
+        ("src/b.rs", "pub fn work() {}\n"),
+        (
+            "src/c.rs",
+            "pub fn alone() { crate::c::other(); }\npub fn other() {}\n",
+        ),
+    ]);
+    let facts = |extra: &[&str]| -> serde_json::Value {
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-atlas"))
+            .current_dir("/")
+            .arg("--root")
+            .arg(f.path())
+            .args(["dependencies", "--scope", "src/a.rs", "--json"])
+            .args(extra)
+            .output()
+            .expect("dependencies");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("JSON");
+        report["facts"].clone()
+    };
+    let names = |facts: &serde_json::Value| -> Vec<String> {
+        facts["functions"]
+            .as_array()
+            .expect("functions")
+            .iter()
+            .map(|f| f["name"].as_str().expect("name").to_owned())
+            .collect()
+    };
+    let scoped = facts(&[]);
+    // call_b in scope, work at the far end of its call; c.rs is not incident.
+    let mut found = names(&scoped);
+    found.sort();
+    assert_eq!(found, ["call_b", "work"]);
+    assert_eq!(scoped["calls"].as_array().expect("calls").len(), 1);
+    assert!(
+        scoped["unknown_calls"]
+            .as_array()
+            .expect("unknown calls")
+            .iter()
+            .all(|u| u["from"].as_str().expect("from").starts_with("src/a.rs:"))
+    );
+    assert!(
+        !scoped["unknown_calls"]
+            .as_array()
+            .expect("unknown calls")
+            .is_empty()
+    );
+    assert!(
+        scoped["limitations"]
+            .as_array()
+            .expect("limitations")
+            .iter()
+            .any(|l| l.as_str().expect("text").contains("incident to `src/a.rs`"))
+    );
+    let all = facts(&["--all-facts"]);
+    assert!(names(&all).contains(&"alone".to_owned()));
+}

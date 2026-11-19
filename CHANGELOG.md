@@ -6,6 +6,17 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `dependencies --json` with a `--scope` lists only the facts incident to the
+ scope: calls, references and constructions with an end in a scoped file, the
+ unresolved calls and types written there, and the functions and types at
+ both ends. `--all-facts` restores the workspace-wide list. On a 1,400-file
+ workspace, a one-file scope's JSON goes from 82 MB to 57 KB, and peak memory
+ halves because each file's syntax tree is released once its facts are read.
+- **Breaking (JSON):** without `--all-facts`, a scoped `dependencies --json`
+ omits facts unrelated to the scope; the `view` is unchanged. The `facts`
+ keys are no longer sorted alphabetically within the document.
+- **Library:** `representations::Facts::incident` selects the facts incident
+ to a scope.
 - `flow` draws `future.await` as the future's own steps, then one await step,
  instead of one opaque step. It does not show when or how often the future is
  polled.

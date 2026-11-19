@@ -34,10 +34,37 @@ impl CachedSource {
         path: &str,
         tests: crate::population::TestSelection,
     ) -> Result<&workflow::ParsedFile> {
+        if let Some(parsed) = self.workflow.get() {
+            return Ok(parsed);
+        }
         let ast = self.ast(path)?;
         Ok(self
             .workflow
             .get_or_init(|| workflow::read_ast(&self.source, path, ast, tests)))
+    }
+}
+impl CachedSource {
+    /// Run `visit` over this file's syntax and cache its workflow facts. A file
+    /// not parsed before is parsed for this call only, so a pass over every
+    /// file holds one syntax tree at a time instead of all of them.
+    pub(super) fn visit_once<T>(
+        &self,
+        path: &str,
+        tests: crate::population::TestSelection,
+        visit: impl FnOnce(&syn::File) -> T,
+    ) -> Result<T> {
+        if self.ast.get().is_some() {
+            self.workflow(path, tests)?;
+            return Ok(visit(self.ast(path)?));
+        }
+        let ast = crate::source::parse_file(self.source.text())
+            .map_err(|error| format!("parse source {path}: {error}"))?;
+        if self.workflow.get().is_none() {
+            let _ = self
+                .workflow
+                .set(workflow::read_ast(&self.source, path, &ast, tests));
+        }
+        Ok(visit(&ast))
     }
 }
 pub(super) type Sources = BTreeMap<String, CachedSource>;

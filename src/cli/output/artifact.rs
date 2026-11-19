@@ -43,9 +43,11 @@ impl Options {
             if self.out.is_some() {
                 return Err("--json writes stdout; omit --out".into());
             }
-            let evidence = serde_json::to_vec_pretty(evidence)?;
-            std::io::stdout().lock().write_all(&evidence)?;
-            println!();
+            // Stream: a large evidence document is never held twice.
+            let mut stdout = std::io::BufWriter::new(std::io::stdout().lock());
+            serde_json::to_writer_pretty(&mut stdout, evidence)?;
+            writeln!(stdout)?;
+            stdout.flush()?;
             return Ok(());
         }
         let artifact = render()?;

@@ -89,6 +89,11 @@ in the JSON. They are never treated as "no call".
 `--scope` selects which files to draw. Files with no arrows still appear, so
 you can see code that nothing else uses.
 
+With `--json`, the evidence lists the facts behind the drawing: the calls,
+types and unresolved names that touch the scoped files, and the functions and
+types at the other end. Atlas still reads the whole workspace to resolve
+them. Add `--all-facts` to list every file's facts.
+
 ## Which functions handle a type
 
 ```sh
