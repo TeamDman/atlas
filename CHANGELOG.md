@@ -4,7 +4,7 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
-## Unreleased
+## cargo-atlas 0.17.0 / atlas-lib 0.7.0
 
 - **Breaking (library):** atlas-lib's public report, fact, step and view
  types are `#[non_exhaustive]`, so later fields and variants are not breaking
@@ -21,6 +21,17 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
    `diagram::{Diagram, Node, Edge, Coverage, Surface, Query}`;
  - the closed verdict `checks::policy::validation::Status` (pass, refuse,
    unavailable).
+- **Breaking (JSON):** without `--all-facts`, a scoped `dependencies --json`
+ omits facts unrelated to the scope; the `view` is unchanged. The `facts`
+ keys are no longer sorted alphabetically within the document.
+- **Breaking (library):** `workflow::Step` has a `Block` variant.
+- **Breaking (library):** `workflow::Workflow` has a `declarations` field of
+ the new `workflow::Declared` type. The workflow JSON reads it as empty when
+ missing.
+- **Breaking (JSON):** `name --json` without `--population` reports the input
+ as `query`, not `name`, and adds `question: "name"`, as the `--population`
+ report already did. **Breaking (library):** `queries::Names::name` is renamed
+ `query`.
 - `program --json` refuses `--out` and `--evidence-dir`, as `dependencies`
  does, instead of ignoring them.
 - Text diagrams say `(1 site)`, not `(1 sites)`. `name --population` headings
@@ -40,9 +51,6 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
  both ends. `--all-facts` restores the workspace-wide list. On a 1,400-file
  workspace, a one-file scope's JSON goes from 82 MB to 57 KB, and peak memory
  halves because each file's syntax tree is released once its facts are read.
-- **Breaking (JSON):** without `--all-facts`, a scoped `dependencies --json`
- omits facts unrelated to the scope; the `view` is unchanged. The `facts`
- keys are no longer sorted alphabetically within the document.
 - **Library:** `representations::Facts::incident` selects the facts incident
  to a scope.
 - `flow` draws `future.await` as the future's own steps, then one await step,
@@ -52,7 +60,6 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
  `break 'found` goes to the step after the block. Before, the whole block was
  one opaque step. An unlabelled `break` or `continue` inside still targets the
  enclosing loop, and `continue 'found` reaches no target.
-- **Breaking (library):** `workflow::Step` has a `Block` variant.
 - `flow` draws the steps inside an `unsafe` block after an `unsafe block,
  through line N` marker, instead of one opaque step.
 - `flow` draws an array repeat `[value; N]` with its element expression as a
@@ -60,9 +67,6 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 - `flow` no longer draws an item or `use` written inside a body as an opaque
  step: it runs nothing. Text output lists each one under the heading as
  `declares (not a step)`, and diagrams list it in their notes.
-- **Breaking (library):** `workflow::Workflow` has a `declarations` field of
- the new `workflow::Declared` type. The workflow JSON reads it as empty when
- missing.
 - `flow` draws a compound assignment (`+=`, `<<=` and the rest) with its
  operands as steps, including any `?` inside them, instead of one opaque step.
  Rust evaluates the right operand first for built-in operators and the left
@@ -75,10 +79,6 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
  such as `parse::Tree` or `nest::a::repeated`) or `FILE:LINE`. Before, the
  default population refused `parse::Tree`, and inline module paths failed in
  both.
-- **Breaking (JSON):** `name --json` without `--population` reports the input
- as `query`, not `name`, and adds `question: "name"`, as the `--population`
- report already did. **Breaking (library):** `queries::Names::name` is renamed
- `query`.
 - `flow --function` selects a trait's default body (`Trait::method`), a trait
  impl's method as `<Type as Trait>::method`, and any function by the line
  (or `LINE:COLUMN`) where its name is written. When a selector matches several
