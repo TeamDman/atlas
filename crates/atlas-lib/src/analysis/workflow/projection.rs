@@ -46,6 +46,8 @@ struct Builder<'a> {
     exhausted: bool,
     folds: Option<Folds>,
     targets: std::collections::BTreeMap<(usize, Site), Target>,
+    /// One note per body-local declaration of every drawn body, once each.
+    declared: Vec<String>,
 }
 struct LoopTarget {
     name: Option<String>,
@@ -71,6 +73,7 @@ impl<'a> Builder<'a> {
             exhausted: false,
             folds: (detail == Detail::Control).then(Folds::default),
             targets: std::collections::BTreeMap::new(),
+            declared: Vec::new(),
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -103,7 +106,10 @@ impl<'a> Builder<'a> {
                 "Source-control possibilities, not path feasibility or a proof of termination. Panics, unwinding, destructors, overloaded operations and macro effects are not inferred.".into(),
                 "Call occurrences have distinct continuations. Unexpanded calls continue only if they return; recursion and unresolved bodies are visible boundaries.".into(),
                 "Pattern failure skips its guard; guard failure tries the next pattern. Each ? exits the current function on its residual branch.".into(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.declared)
+            .collect(),
             evidence_links: vec![],
         };
         if let Some(folds) = self.folds {
@@ -167,6 +173,17 @@ impl<'a> Builder<'a> {
             folds
                 .call_sites
                 .extend(flow.calls.iter().map(|c| c.site.clone()));
+        }
+        for declared in &flow.declarations {
+            let note = format!(
+                "{} declares {} at {}; it runs nothing, so it is not a step.",
+                flow.function,
+                declared.label,
+                declared.site.link()
+            );
+            if !self.declared.contains(&note) {
+                self.declared.push(note);
+            }
         }
         let entry = self.node(&format!("fn {}", flow.function), &flow.site);
         let end = self.node(

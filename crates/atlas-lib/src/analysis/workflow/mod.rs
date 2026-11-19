@@ -154,6 +154,13 @@ pub struct Binding {
     pub initializer: Option<String>,
     pub site: Site,
 }
+/// An item or `use` written inside a body. It declares a name and runs
+/// nothing, so it is not a step.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Declared {
+    pub label: String,
+    pub site: Site,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workflow {
     pub schema: u32,
@@ -171,6 +178,9 @@ pub struct Workflow {
     /// call through one stays unresolved.
     #[serde(default)]
     pub local_names: Vec<String>,
+    /// Body-local items and imports in source order, outside closures.
+    #[serde(default)]
+    pub declarations: Vec<Declared>,
     pub imports: std::collections::BTreeMap<String, Vec<Vec<String>>>,
     pub output: String,
     pub limits: Vec<String>,
@@ -241,6 +251,17 @@ impl Workflow {
     /// Structured terminal view: indentation is control nesting, arrows are source order.
     pub fn ascii(&self) -> String {
         let mut out = format!("{} ({})\n\n", self.function, self.site.link());
+        for declared in &self.declarations {
+            let _ = writeln!(
+                out,
+                "declares (not a step): {} [{}]",
+                declared.label,
+                declared.site.link()
+            );
+        }
+        if !self.declarations.is_empty() {
+            out.push('\n');
+        }
         write_steps(&mut out, &self.steps, 0);
         let _ = writeln!(
             out,

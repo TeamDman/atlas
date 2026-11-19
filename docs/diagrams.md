@@ -203,6 +203,10 @@ A compound assignment such as `total[i()] += next()?` evaluates its operands
 in an order that depends on their types, so when both sides have steps, Atlas
 draws both orders as a branch.
 
+An item or `use` written inside the body, such as a nested `fn`, runs nothing,
+so it is not a step: the text output lists it under the heading and a diagram
+lists it in its notes.
+
 Some steps are *opaque*: Atlas knows they are there but does not look inside.
 Macro calls, closures, `async`, `try` and `unsafe` blocks, labelled blocks and
 syntax Atlas does not support are opaque. Atlas does not guess what they do.

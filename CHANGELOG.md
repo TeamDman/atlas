@@ -6,6 +6,12 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` no longer draws an item or `use` written inside a body as an opaque
+ step: it runs nothing. Text output lists each one under the heading as
+ `declares (not a step)`, and diagrams list it in their notes.
+- **Breaking (library):** `workflow::Workflow` has a `declarations` field of
+ the new `workflow::Declared` type. The workflow JSON reads it as empty when
+ missing.
 - `flow` draws a compound assignment (`+=`, `<<=` and the rest) with its
  operands as steps, including any `?` inside them, instead of one opaque step.
  Rust evaluates the right operand first for built-in operators and the left

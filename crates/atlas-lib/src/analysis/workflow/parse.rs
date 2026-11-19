@@ -141,11 +141,8 @@ impl Reader<'_> {
                     fallible: false,
                     site: self.site(m.span()),
                 }),
-                Stmt::Item(item) => out.push(Step::Opaque {
-                    label: format!("local declaration: {}", self.text(item.span())),
-                    fallible: false,
-                    site: self.site(item.span()),
-                }),
+                // Declarations run nothing; Workflow::declarations lists them.
+                Stmt::Item(_) => {}
             }
         }
         out
@@ -473,6 +470,38 @@ mod tests {
         assert_eq!(
             labels(&flow.steps[1..]),
             ["[opaque] slot()[i()] *= next()?"]
+        );
+    }
+
+    #[test]
+    fn body_local_items_are_declarations_not_steps() {
+        let source = "fn f() {\n    use std::mem::swap as exchange;\n    work();\n    fn helper(x: u8) -> u8 { x }\n    if ready() { struct Inner; }\n}";
+        let flow = parse(source, "lib.rs", "f").unwrap();
+        assert_eq!(labels(&flow.steps[..1]), ["work()"]);
+        let declared: Vec<_> = flow
+            .declarations
+            .iter()
+            .map(|d| (d.label.as_str(), d.site.line))
+            .collect();
+        assert_eq!(
+            declared,
+            [
+                ("use std::mem::swap as exchange;", 2),
+                ("fn helper(x: u8) -> u8", 4),
+                ("struct Inner;", 5),
+            ]
+        );
+        assert!(!flow.ascii().contains("[opaque]"), "{}", flow.ascii());
+        assert!(
+            flow.ascii()
+                .contains("declares (not a step): fn helper(x: u8) -> u8 [lib.rs:4]")
+        );
+        let notes = flow.diagram().notes;
+        assert!(
+            notes
+                .iter()
+                .any(|n| n.contains("f declares struct Inner; at lib.rs:5")),
+            "{notes:?}"
         );
     }
 

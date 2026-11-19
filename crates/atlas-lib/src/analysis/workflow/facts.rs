@@ -1,5 +1,5 @@
 //! Calls and explicit bindings from the same AST as the ordered body projection.
-use super::{Binding, Call, parse::Reader};
+use super::{Binding, Call, Declared, parse::Reader};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::{Expr, FnArg, Item, Pat, Signature, spanned::Spanned, visit::Visit};
 
@@ -51,12 +51,13 @@ pub(super) fn body(
     reader: &Reader<'_>,
     signature: &Signature,
     block: &syn::Block,
-) -> (Vec<Call>, Vec<Binding>, Vec<String>) {
+) -> (Vec<Call>, Vec<Binding>, Vec<String>, Vec<Declared>) {
     let mut facts = Facts {
         reader,
         calls: vec![],
         bindings: vec![],
         items: BTreeSet::new(),
+        declared: vec![],
     };
     for arg in &signature.inputs {
         if let FnArg::Typed(arg) = arg
@@ -77,6 +78,7 @@ pub(super) fn body(
         facts.calls,
         facts.bindings,
         facts.items.into_iter().collect(),
+        facts.declared,
     )
 }
 struct Facts<'a, 'b> {
@@ -85,6 +87,7 @@ struct Facts<'a, 'b> {
     bindings: Vec<Binding>,
     /// Names bound by items and `use` declarations inside the body.
     items: BTreeSet<String>,
+    declared: Vec<Declared>,
 }
 /// The names a body-local item binds; `*` for a glob import. A macro
 /// definition binds no call path.
@@ -231,6 +234,15 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
     /// module's throughout the enclosing block.
     fn visit_item(&mut self, item: &'ast Item) {
         self.items.extend(item_names(item));
+        // A function is named by its signature, not its whole body.
+        let header = match item {
+            Item::Fn(f) => f.sig.span(),
+            _ => item.span(),
+        };
+        self.declared.push(Declared {
+            label: self.reader.text(header),
+            site: self.reader.site(item.span()),
+        });
     }
     fn visit_arm(&mut self, arm: &'ast syn::Arm) {
         self.visit_pat(&arm.pat);

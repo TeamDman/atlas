@@ -388,3 +388,37 @@ fn compact_unexpanded_control_refuses_oversize_before_folding() {
         .unwrap_err();
     assert!(error.to_string().contains("600"));
 }
+
+#[test]
+fn an_expanded_callee_notes_its_local_declarations() {
+    let (_f, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "pub fn run(){ use std::mem::swap as exchange; helper(); helper(); }\nfn helper(){ fn inner(){} const LIMIT: u8 = 3; }\n",
+        )],
+        "run",
+        1,
+    );
+    let declared: Vec<_> = d
+        .notes
+        .iter()
+        .filter(|n| n.contains(" declares "))
+        .collect();
+    assert_eq!(declared.len(), 3, "{declared:?}");
+    assert!(declared[0].starts_with("run declares use std::mem::swap as exchange;"));
+    assert!(
+        declared
+            .iter()
+            .any(|n| n.starts_with("helper declares fn inner() at src/lib.rs:2"))
+    );
+    assert!(
+        declared
+            .iter()
+            .any(|n| n.starts_with("helper declares const LIMIT: u8 = 3;"))
+    );
+    assert!(
+        !d.nodes
+            .iter()
+            .any(|n| n.label.contains("[opaque]") && n.label.contains("inner"))
+    );
+}

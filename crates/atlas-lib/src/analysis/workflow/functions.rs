@@ -184,7 +184,7 @@ impl Reader<'_> {
         Ok(self.build(function))
     }
     pub(super) fn build(&self, function: &Function<'_>) -> Workflow {
-        let (calls, bindings, local_names) =
+        let (calls, bindings, local_names, declarations) =
             super::facts::body(self, function.signature, function.body);
         let limits = [
             "Calls stay at their call sites; names and dispatch are not resolved or expanded.",
@@ -205,6 +205,7 @@ impl Reader<'_> {
             calls,
             bindings,
             local_names,
+            declarations,
             imports: function.imports.clone(),
             output: match &function.signature.output {
                 syn::ReturnType::Default => "()".into(),
