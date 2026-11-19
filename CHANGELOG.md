@@ -6,6 +6,8 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws an array repeat `[value; N]` with its element expression as a
+ step, evaluated once, instead of one opaque step.
 - `flow` no longer draws an item or `use` written inside a body as an opaque
  step: it runs nothing. Text output lists each one under the heading as
  `declares (not a step)`, and diagrams list it in their notes.

@@ -416,6 +416,8 @@ impl Reader<'_> {
                 steps.push(self.action(expr));
                 steps
             }
+            // The element is evaluated once; the length is a constant.
+            Expr::Repeat(e) => self.with_operand(expr, &e.expr),
             Expr::Range(e) => {
                 // A range evaluates its start, then its end.
                 let mut steps = Vec::new();
@@ -502,6 +504,15 @@ mod tests {
                 .iter()
                 .any(|n| n.contains("f declares struct Inner; at lib.rs:5")),
             "{notes:?}"
+        );
+    }
+
+    #[test]
+    fn an_array_repeat_evaluates_its_element_once() {
+        let flow = parse("fn f() { fill([seed(); 4]); }", "lib.rs", "f").unwrap();
+        assert_eq!(
+            labels(&flow.steps),
+            ["seed()", "[seed(); 4]", "fill([seed(); 4])"]
         );
     }
 
