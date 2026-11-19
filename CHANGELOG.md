@@ -4,6 +4,21 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## cargo-atlas 0.13.0
+
+- `cargo atlas overview` no longer refuses when the declared stages select more
+ than 12 types. It draws several panels of at most 12, each holding whole
+ declaring modules in declared order and titled with their names. A function
+ taking or returning a panel's type is drawn there too, so forms passed
+ between stages stay visible. Every selected type appears; nothing is cut. A
+ single module declaring more than 12 selected types is refused by name.
+- **Breaking (JSON):** the overview's `views` is replaced by `panels`, each
+ with its `modules` and `views`, and a `split` listing each module's type
+ count and panel. The `cargo_atlas::overview::Overview` type changes the same
+ way.
+- `cargo atlas representations` keeps its limit of 1 to 12 types per question.
+- `atlas-lib` is unchanged at 0.5.0; the adapter protocol is still version 2.
+
 ## cargo-atlas 0.12.0 / atlas-lib 0.5.0
 
 Declaration adapters must be rebuilt against `cargo-atlas` 0.12.0: the adapter

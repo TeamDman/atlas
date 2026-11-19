@@ -1,15 +1,16 @@
 //! Present source-declared contracts and instrument calls as separate panels.
-use crate::{Result, overview::Overview, representations};
+use crate::{
+    Result,
+    overview::Overview,
+    render::{Artifact, Document, pele::dimensions, theme::Palette},
+    representations,
+};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 /// Append a separate native Pele instrument panel; never join call and contract edges.
 pub fn pele(overview: &Overview, theme: crate::render::Theme) -> Result<crate::render::Artifact> {
     let palette = theme.palette();
-    let mut artifact = crate::render::representations::vertical(
-        &overview.views,
-        representations::Panel::Contracts,
-        palette,
-    )?;
+    let mut artifact = contracts(overview, palette)?;
     if overview.instruments.is_empty() {
         return Ok(artifact);
     }
@@ -58,9 +59,73 @@ pub fn pele(overview: &Overview, theme: crate::render::Theme) -> Result<crate::r
     Ok(artifact)
 }
 
+/// Each panel's contract figure, stacked top to bottom in panel order.
+fn contracts(overview: &Overview, palette: &Palette) -> Result<Artifact> {
+    let mut figures = overview
+        .panels
+        .iter()
+        .map(|panel| {
+            crate::render::representations::vertical(
+                &panel.views,
+                representations::Panel::Contracts,
+                palette,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if figures.len() == 1 {
+        return Ok(figures.remove(0));
+    }
+    let count = figures.len();
+    let (mut body, mut mmd, mut width, mut height) = (String::new(), String::new(), 0f64, 0f64);
+    for (number, figure) in figures.into_iter().enumerate() {
+        let svg = String::from_utf8(figure.primary.bytes)?;
+        let (w, h) = dimensions(&svg)?;
+        write!(body, "<g transform=\"translate(0,{height})\">{svg}</g>")?;
+        width = width.max(w);
+        height += h;
+        for document in figure.companions.into_iter().filter(|d| d.suffix == "mmd") {
+            writeln!(mmd, "%% Panel {} of {count}", number + 1)?;
+            mmd.push_str(&String::from_utf8(document.bytes)?);
+        }
+    }
+    Ok(Artifact {
+        primary: Document {
+            suffix: "svg",
+            bytes: format!(
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\"><rect width=\"100%\" height=\"100%\" fill=\"{}\"/>{body}</svg>",
+                palette.background
+            )
+            .into_bytes(),
+        },
+        companions: vec![Document {
+            suffix: "mmd",
+            bytes: mmd.into_bytes(),
+        }],
+    })
+}
+
 /// Text of the same contracts and instrument calls as the Pele overview.
 pub fn ascii(overview: &Overview) -> String {
-    let mut text = representations::ascii(&overview.views, representations::Panel::Contracts);
+    let count = overview.panels.len();
+    let mut text = String::new();
+    for (number, panel) in overview.panels.iter().enumerate() {
+        if count > 1 {
+            writeln!(
+                text,
+                "PANEL {} OF {count}: {}",
+                number + 1,
+                panel.modules.join(", ")
+            )
+            .expect("formatting into a String cannot fail");
+        }
+        text.push_str(&representations::ascii(
+            &panel.views,
+            representations::Panel::Contracts,
+        ));
+        if number + 1 < count {
+            text.push('\n');
+        }
+    }
     text.push_str("\nVERIFICATION INSTRUMENTS (observed direct calls; not pipeline edges)\n");
     for i in &overview.instruments {
         write!(

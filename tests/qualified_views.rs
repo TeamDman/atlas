@@ -260,10 +260,12 @@ fn source_declarations_choose_apis_but_not_edges_and_instruments_survive() {
         .bind(f.path())
         .unwrap();
     let v = overview::project(&facts, &a).unwrap();
-    assert!(v.views.types.iter().any(|t| t.name == "Graph"));
-    assert!(v.views.types.iter().any(|t| t.name == "Runtime"));
+    assert_eq!(v.panels.len(), 1);
+    let views = &v.panels[0].views;
+    assert!(views.types.iter().any(|t| t.name == "Graph"));
+    assert!(views.types.iter().any(|t| t.name == "Runtime"));
     assert!(
-        v.views
+        views
             .contracts
             .iter()
             .any(|c| c.function.name == "bypass" && c.additional_constructor)
@@ -283,6 +285,131 @@ fn source_declarations_choose_apis_but_not_edges_and_instruments_survive() {
     );
     assert!(a.modules.iter().all(|m| m.dependencies.is_empty()));
 }
+/// A workspace of stages `s0`, `s1`, ... where stage `i` declares `sizes[i]`
+/// types and its entry `run` returns all of them. Each later stage's entry also
+/// takes the previous stage's first type, a cross-stage form.
+fn staged(sizes: &[usize]) -> (Fixture, Facts, cargo_atlas::architecture::Architecture) {
+    use std::fmt::Write;
+    let rows: Vec<_> = (0..sizes.len())
+        .map(|i| format!("(\"s{i}\",\"run\",Layer::Stage)"))
+        .collect();
+    let mut lib = String::new();
+    for i in 0..sizes.len() {
+        writeln!(lib, "pub mod s{i};").expect("formatting into a String cannot fail");
+    }
+    writeln!(
+        lib,
+        "enum Layer{{Stage,Instrument}}\nconst LAYERS:[(&str,&str,Layer);{}]=[{}];",
+        sizes.len(),
+        rows.join(",")
+    )
+    .expect("formatting into a String cannot fail");
+    let f = Fixture::new(&[("src/lib.rs", lib.as_str())]);
+    for (i, &size) in sizes.iter().enumerate() {
+        let names: Vec<_> = (0..size).map(|t| format!("S{i}T{t}")).collect();
+        let mut text = String::new();
+        for name in &names {
+            writeln!(text, "pub struct {name};").expect("formatting into a String cannot fail");
+        }
+        let input = if i == 0 {
+            String::new()
+        } else {
+            format!("_: crate::s{}::S{}T0", i - 1, i - 1)
+        };
+        let names = names.join(",");
+        writeln!(text, "pub fn run({input})->({names},){{({names},)}}")
+            .expect("formatting into a String cannot fail");
+        f.write(&format!("src/s{i}.rs"), &text);
+    }
+    let (_, g, facts) = scan(&f);
+    let input = adapter::Request::new(
+        adapter::Snapshot::from_facts(&g, &facts, "src/lib.rs")
+            .expect("test fixture prerequisite must succeed"),
+        "src/lib.rs".into(),
+    )
+    .expect("test fixture prerequisite must succeed");
+    let reply = adapter::adapt(&Layers, &input);
+    let architecture = reply
+        .architecture()
+        .expect("test fixture prerequisite must succeed")
+        .clone()
+        .bind(f.path())
+        .expect("test fixture prerequisite must succeed");
+    (f, facts, architecture)
+}
+
+#[test]
+fn an_overview_above_one_figure_is_split_into_module_panels_without_dropping_types() {
+    let (_f, facts, architecture) = staged(&[5, 5, 5]);
+    let v = overview::project(&facts, &architecture).unwrap();
+    // Whole modules, packed in declared order into panels of at most 12.
+    let modules: Vec<_> = v.panels.iter().map(|p| p.modules.clone()).collect();
+    assert_eq!(modules, [vec!["s0", "s1"], vec!["s2"]]);
+    let split: Vec<_> = v
+        .split
+        .iter()
+        .map(|g| (g.module.as_deref().unwrap(), g.types, g.panel))
+        .collect();
+    assert_eq!(split, [("s0", 5, 0), ("s1", 5, 0), ("s2", 5, 1)]);
+    // Every selected type appears exactly once.
+    let mut drawn: Vec<_> = v
+        .panels
+        .iter()
+        .flat_map(|p| p.views.types.iter().map(|t| t.name.clone()))
+        .collect();
+    drawn.sort();
+    let mut expected: Vec<_> = (0..3)
+        .flat_map(|i| (0..5).map(move |t| format!("S{i}T{t}")))
+        .collect();
+    expected.sort();
+    assert_eq!(drawn, expected);
+    // s2's entry takes S1T0, so it is also drawn in the panel holding s1.
+    let first = &v.panels[0].views;
+    let s1t0 = first.types.iter().find(|t| t.name == "S1T0").unwrap();
+    assert!(
+        first
+            .contracts
+            .iter()
+            .any(|c| c.function.file == "src/s2.rs" && c.inputs.iter().any(|r| r.to == s1t0.id))
+    );
+    let json = serde_json::to_value(&v).unwrap();
+    assert_eq!(json["split"].as_array().unwrap().len(), 3);
+    let text = overview::ascii(&v);
+    assert!(text.contains("PANEL 1 OF 2: s0, s1") && text.contains("PANEL 2 OF 2: s2"));
+    assert!(expected.iter().all(|name| text.contains(name.as_str())));
+    let svg = overview::pele(&v, cargo_atlas::render::Theme::Light).unwrap();
+    let svg = String::from_utf8(svg.primary.bytes).unwrap();
+    assert!(svg.contains("panel 1 of 2: s0, s1") && svg.contains("panel 2 of 2: s2"));
+    assert!(expected.iter().all(|name| svg.contains(name.as_str())));
+}
+
+#[test]
+fn one_module_above_a_figure_refuses_by_name_and_user_queries_keep_their_cap() {
+    let (_f, facts, architecture) = staged(&[3, 13]);
+    let error = overview::project(&facts, &architecture)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("module `s1` declares 13"), "{error}");
+    let query = representations::Query {
+        title: "thirteen".into(),
+        types: (0..13)
+            .map(|t| representations::Selector {
+                name: format!("S1T{t}"),
+                file: Some("src/s1.rs".into()),
+            })
+            .collect(),
+        apis: vec![],
+        preparation_files: vec![],
+        preparation_functions: vec![],
+    };
+    let error = representations::project(&facts, &query)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("select 1–12 types per figure"), "{error}");
+}
+
 #[test]
 #[expect(
     clippy::many_single_char_names,

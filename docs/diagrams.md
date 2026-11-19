@@ -259,6 +259,17 @@ stage takes. Modules marked as instruments (such as logging or measurement
 code) get a separate panel. Your declarations decide what counts as a stage,
 but they never add or hide observed relationships.
 
+One figure holds at most 12 types. When the stages select more, the overview
+draws several panels, one after another. Each panel holds the types declared
+by whole modules, taken in the order you declared them, and is titled with
+those modules' names. A function that takes or returns a type in a panel is
+drawn in that panel even when its own stage is elsewhere, so a type handed from
+one stage to the next stays visible. Every selected type appears; nothing is
+cut. The JSON's `split` lists each module, how many types it declares and which
+panel holds them. If one module alone declares more than 12 selected types,
+the overview refuses and names that module, because splitting it would separate
+types that belong together.
+
 ## Older views: map and program
 
 `map` and `program` are older views.
