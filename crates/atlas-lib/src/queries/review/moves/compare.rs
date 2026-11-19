@@ -139,6 +139,8 @@ pub(super) struct BodyReport<'a> {
     pub(super) exact: usize,
     /// Of the exact and rerooted pairs, those whose file changed.
     pub(super) relocated: usize,
+    /// Exact pairs whose file changed.
+    pub(super) exact_relocated: Vec<Change<'a>>,
     pub(super) rerooted: Vec<Change<'a>>,
     pub(super) changed: Vec<Change<'a>>,
     pub(super) only_before: Vec<(&'a Key, &'a Site)>,
@@ -147,14 +149,15 @@ pub(super) struct BodyReport<'a> {
 }
 
 impl<'a> BodyReport<'a> {
-    /// Per key, pair exact bodies first, then rerooted ones, then the rest in
-    /// order as changed. Pairing spans the matched crates; a finding is
+    /// Per key, pair exact bodies first, then rerooted ones, each within a
+    /// file before across files, then the rest as changed (same file first). Pairing spans the matched crates; a finding is
     /// reported when its current site (or, for a removal, its old site) lies
     /// in scope.
     pub(super) fn between(before: &'a Inventory, after: &'a Inventory, scope: &Scope) -> Self {
         let mut report = Self {
             exact: 0,
             relocated: 0,
+            exact_relocated: Vec::new(),
             rerooted: Vec::new(),
             changed: Vec::new(),
             only_before: Vec::new(),
@@ -191,34 +194,39 @@ impl<'a> BodyReport<'a> {
             // A `use` binding reports only a retarget: moves add, drop and
             // reroot imports by design.
             let binding = key.1 == "use";
-            let mut unpaired = Vec::new();
-            for site in new {
-                let pass = |rerooted: bool, old: &Vec<&Site>| {
-                    old.iter().position(|candidate| {
-                        reading(candidate, rerooted) == reading(site, rerooted)
-                    })
-                };
-                let reported = scope.admits(key, site);
-                let counted = reported && !binding;
-                if let Some(index) = pass(false, &old) {
-                    let candidate = old.swap_remove(index);
-                    if counted {
-                        report.exact += 1;
-                        report.relocated += usize::from(candidate.file != site.file);
-                    }
-                } else if let Some(index) = pass(true, &old) {
-                    let candidate = old.swap_remove(index);
-                    if counted {
-                        report.relocated += usize::from(candidate.file != site.file);
-                        report.rerooted.push(Change {
-                            key,
-                            before: candidate,
-                            after: site,
-                            ambiguous,
-                        });
-                    }
-                } else {
-                    unpaired.push(site);
+            // Same-file pairs cancel before cross-file ones, so identical
+            // sources never relocate; old sites keep source order.
+            let mut unpaired = new;
+            for rerooted in [false, true] {
+                for same_file in [true, false] {
+                    unpaired.retain(|site| {
+                        let Some(index) = old.iter().position(|candidate| {
+                            (!same_file || candidate.file == site.file)
+                                && reading(candidate, rerooted) == reading(site, rerooted)
+                        }) else {
+                            return true;
+                        };
+                        let candidate = old.remove(index);
+                        if scope.admits(key, site) && !binding {
+                            let change = Change {
+                                key,
+                                before: candidate,
+                                after: site,
+                                ambiguous,
+                            };
+                            let moved = candidate.file != site.file;
+                            report.relocated += usize::from(moved);
+                            if rerooted {
+                                report.rerooted.push(change);
+                            } else {
+                                report.exact += 1;
+                                if moved {
+                                    report.exact_relocated.push(change);
+                                }
+                            }
+                        }
+                        false
+                    });
                 }
             }
             for site in unpaired {
@@ -228,7 +236,11 @@ impl<'a> BodyReport<'a> {
                         report.only_after.push((key, site));
                     }
                 } else {
-                    let candidate = old.remove(0);
+                    let index = old
+                        .iter()
+                        .position(|candidate| candidate.file == site.file)
+                        .unwrap_or(0);
+                    let candidate = old.remove(index);
                     if reported {
                         report.changed.push(Change {
                             key,

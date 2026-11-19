@@ -156,7 +156,8 @@ fn review(root: &Path) -> atlas_lib::Result<()> {
 - `review::moves::moved` compares item bodies. *Exact* means the tokens are
   the same, ignoring docs, visibility and layout. *Rerooted* means they are the
   same once module paths such as `crate::` and `super::` are ignored.
-  *Changed* means anything else.
+  *Changed* means anything else. Equal bodies pair within a file first;
+  `exact_relocated` lists the exact ones that moved file.
 - `review::moves::visibility` lists items whose written visibility changed.
 
 None of these claims two pieces of code behave the same; they compare how the

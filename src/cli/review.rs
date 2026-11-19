@@ -125,6 +125,9 @@ pub(crate) fn run(
                     report.unreadable.len(),
                     report.relocated
                 );
+                for row in &report.exact_relocated {
+                    pair("relocated", row);
+                }
                 for row in &report.rerooted {
                     pair("rerooted (review)", row);
                 }

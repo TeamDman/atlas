@@ -535,3 +535,72 @@ fn excluded_source_diagnostics_survive_the_comparison_basis() {
             .any(|d| d.file == "src/excluded.rs")
     );
 }
+
+#[test]
+fn identical_sources_with_repeated_equal_bodies_never_relocate() {
+    // One `Gate::run` differs and two are equal; pairing must stay in file.
+    let files = [
+        ("a.rs", "struct Gate;\nimpl Gate { fn run() { one(); } }\n"),
+        ("b.rs", "impl super::a::Gate { fn run() { two(); } }\n"),
+        ("c.rs", "impl super::a::Gate { fn run() { two(); } }\n"),
+    ];
+    let snapshot = workspace(&files);
+    let old = inventory(&snapshot, &all, true).expect("before inventory");
+    let new = inventory(&workspace(&files), &all, true).expect("after inventory");
+    let report = BodyReport::between(&old, &new, &Scope::Workspace);
+    assert!(report.exact > 0);
+    assert_eq!(report.relocated, 0);
+    assert!(report.exact_relocated.is_empty());
+    assert!(report.changed.is_empty() && report.rerooted.is_empty());
+}
+
+#[test]
+fn an_exact_move_to_another_file_has_a_row_with_both_sites() {
+    let (before, after) = sides(QUEUE, QUEUE, true);
+    let report = BodyReport::between(&before, &after, &Scope::Workspace);
+    assert_eq!((report.exact, report.relocated), (7, 7));
+    let rows: Vec<_> = report
+        .exact_relocated
+        .iter()
+        .map(|change| {
+            (
+                change.key.2.as_str(),
+                change.before.file.as_str(),
+                change.after.file.as_str(),
+                change.ambiguous,
+            )
+        })
+        .collect();
+    assert!(rows.contains(&(
+        "helper",
+        "crates/demo-fix/src/queue.rs",
+        "crates/demo-fix/src/rt/queue.rs",
+        false
+    )));
+    assert_eq!(rows.len(), 7, "{rows:?}");
+}
+
+#[test]
+fn a_repeated_key_moved_across_files_is_marked_ambiguous() {
+    let body = "impl super::Gate { fn run() { two(); } }\n";
+    let before = workspace(&[
+        ("lib.rs", "struct Gate;\nmod a;\nmod b;\n"),
+        ("a.rs", body),
+        ("b.rs", body),
+    ]);
+    let after = workspace(&[
+        ("lib.rs", "struct Gate;\nmod c;\nmod d;\n"),
+        ("c.rs", body),
+        ("d.rs", body),
+    ]);
+    let old = inventory(&before, &all, true).expect("before inventory");
+    let new = inventory(&after, &all, true).expect("after inventory");
+    let report = BodyReport::between(&old, &new, &Scope::Workspace);
+    let run: Vec<_> = report
+        .exact_relocated
+        .iter()
+        .filter(|change| change.key.2.ends_with("run"))
+        .collect();
+    assert_eq!(run.len(), 2);
+    assert!(run.iter().all(|change| change.ambiguous));
+}

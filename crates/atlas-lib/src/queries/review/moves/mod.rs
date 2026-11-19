@@ -72,6 +72,7 @@ pub fn moved(before: &Snapshot, after: &Snapshot, scope: Option<&str>) -> Result
         basis: Basis::of(before, after, &matched),
         exact: report.exact,
         relocated: report.relocated,
+        exact_relocated: report.exact_relocated.iter().map(Pair::from).collect(),
         rerooted: report.rerooted.iter().map(Pair::from).collect(),
         changed: report.changed.iter().map(Pair::from).collect(),
         only_before: report.only_before.into_iter().map(Single::from).collect(),
@@ -79,6 +80,7 @@ pub fn moved(before: &Snapshot, after: &Snapshot, scope: Option<&str>) -> Result
         unreadable: report.unreadable.into_iter().map(Single::from).collect(),
         limits: vec![
             "Native lexical keys are crate/class/name, including inline-module and impl-owner names; duplicate keys remain approximate.",
+            "Equal bodies pair within a file before across files; a repeated key's cross-file pairs are marked ambiguous.",
             "Exact forgives docs, visibility and layout, including closure-brace/trailing-comma normalization outside parentheses and macro input.",
             "Rerooting forgives crate/super/self and declared or imported module paths; different destinations can reroot equal, so review these rows.",
             "No macro expansion, type resolution or behavior-equivalence claim; macro input tokens are preserved without normalization.",
@@ -205,7 +207,11 @@ pub struct MoveReport {
     pub population: crate::population::TestSelection,
     pub basis: Basis,
     pub exact: usize,
+    /// Exact and rerooted pairs whose file changed.
     pub relocated: usize,
+    /// Exact pairs whose file changed; `ambiguous` marks a repeated key, whose
+    /// pairing among equal bodies is not unique.
+    pub exact_relocated: Vec<Pair>,
     pub rerooted: Vec<Pair>,
     pub changed: Vec<Pair>,
     pub only_before: Vec<Single>,
