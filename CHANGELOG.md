@@ -6,6 +6,8 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws a range's start and end as steps before the range, instead of
+ one opaque step that hid both.
 - `name` reads one selector grammar with or without `--population`: `NAME`,
  `MODULE::NAME` (the end of the module path, inline `mod` blocks included,
  such as `parse::Tree` or `nest::a::repeated`) or `FILE:LINE`. Before, the

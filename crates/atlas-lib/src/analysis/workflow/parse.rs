@@ -392,6 +392,15 @@ impl Reader<'_> {
                 steps.push(self.action(expr));
                 steps
             }
+            Expr::Range(e) => {
+                // A range evaluates its start, then its end.
+                let mut steps = Vec::new();
+                for endpoint in [&e.start, &e.end].into_iter().flatten() {
+                    steps.extend(self.operand(endpoint));
+                }
+                steps.push(self.action(expr));
+                steps
+            }
             Expr::Let(e) => self.with_operand(expr, &e.expr),
             Expr::Lit(_) | Expr::Path(_) => vec![self.action(expr)],
             _ => vec![self.opaque(expr)],
@@ -402,6 +411,38 @@ impl Reader<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn labels(steps: &[Step]) -> Vec<String> {
+        steps
+            .iter()
+            .map(|step| match step {
+                Step::Action { label, .. } => label.clone(),
+                Step::Opaque { label, .. } => format!("[opaque] {label}"),
+                other => format!("{other:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_range_evaluates_its_start_then_its_end() {
+        let source = "fn f() { take(start()..end()); take(..=end()); take(start()..); }";
+        let flow = parse(source, "lib.rs", "f").unwrap();
+        assert_eq!(
+            labels(&flow.steps),
+            [
+                "start()",
+                "end()",
+                "start()..end()",
+                "take(start()..end())",
+                "end()",
+                "..=end()",
+                "take(..=end())",
+                "start()",
+                "start()..",
+                "take(start()..)",
+            ]
+        );
+    }
     #[test]
     fn retains_order_fallibility_branches_loops_and_sites() {
         let source = "fn build() {\n let x = parse()?;\n for item in values() {\n match check(item) { Ok(v) => save(v), Err(e) => return fail(e) }\n }\n finish(x);\n}";
