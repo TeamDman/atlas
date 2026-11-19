@@ -97,7 +97,8 @@ impl Reader<'_> {
         Ok(self.build(function))
     }
     pub(super) fn build(&self, function: &Function<'_>) -> Workflow {
-        let (calls, bindings) = super::facts::body(self, function.signature, function.body);
+        let (calls, bindings, local_names) =
+            super::facts::body(self, function.signature, function.body);
         let limits = [
             "Calls stay at their call sites; names and dispatch are not resolved or expanded.",
             "Operands are evaluated before their enclosing operation; labels over 110 characters are shortened, source spans remain exact.",
@@ -116,6 +117,7 @@ impl Reader<'_> {
             steps: self.block(function.body),
             calls,
             bindings,
+            local_names,
             imports: function.imports.clone(),
             output: match &function.signature.output {
                 syn::ReturnType::Default => "()".into(),

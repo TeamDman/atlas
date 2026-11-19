@@ -452,3 +452,37 @@ fn fallible_constructor_unwrapping_is_not_inferred() {
             .any(|o| o.reason.contains("initializer result not established"))
     );
 }
+
+#[test]
+fn block_local_items_and_imports_shadow_module_names() {
+    // Each body binds `go` or a glob locally; the module-level `go` is the
+    // stage entry, so any edge to the stage would be a wrong answer.
+    let f = Fixture::new(&[
+        ("src/lib.rs", "pub mod stage;\npub mod other;\n"),
+        ("src/stage.rs", "pub fn run(){}\n"),
+        ("src/other.rs", "pub fn run(){}\npub fn go(){}\n"),
+        (
+            "src/main.rs",
+            "use fixture::stage::run as go;\n\
+             fn main(){ via_import(); via_fn(); via_glob(); }\n\
+             fn via_import(){ use fixture::other::run as go; go(); }\n\
+             fn via_fn(){ go(); fn go(){} }\n\
+             fn via_glob(){ use fixture::other::*; go(); }\n",
+        ),
+    ]);
+    let p = build(
+        &f,
+        &profile(
+            &f,
+            serde_json::json!([stage("stage", "src/stage.rs", "run")]),
+        ),
+    )
+    .unwrap();
+    assert!(!p.connections.iter().any(|e| e.to == "stage"));
+    let shadowed = p
+        .observations
+        .iter()
+        .filter(|o| o.reason.contains("block-local item or import go shadows"))
+        .count();
+    assert_eq!(shadowed, 3, "{:?}", p.observations);
+}

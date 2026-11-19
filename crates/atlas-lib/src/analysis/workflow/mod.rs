@@ -166,6 +166,11 @@ pub struct Workflow {
     pub steps: Vec<Step>,
     pub calls: Vec<Call>,
     pub bindings: Vec<Binding>,
+    /// Names bound by items and `use` declarations written inside the body,
+    /// sorted; `*` marks a glob import. They shadow the module's names, so a
+    /// call through one stays unresolved.
+    #[serde(default)]
+    pub local_names: Vec<String>,
     pub imports: std::collections::BTreeMap<String, Vec<Vec<String>>>,
     pub output: String,
     pub limits: Vec<String>,

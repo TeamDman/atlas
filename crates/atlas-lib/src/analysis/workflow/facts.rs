@@ -1,6 +1,6 @@
 //! Calls and explicit bindings from the same AST as the ordered body projection.
 use super::{Binding, Call, parse::Reader};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use syn::{Expr, FnArg, Item, Pat, Signature, spanned::Spanned, visit::Visit};
 
 pub(crate) fn imports(
@@ -51,11 +51,12 @@ pub(super) fn body(
     reader: &Reader<'_>,
     signature: &Signature,
     block: &syn::Block,
-) -> (Vec<Call>, Vec<Binding>) {
+) -> (Vec<Call>, Vec<Binding>, Vec<String>) {
     let mut facts = Facts {
         reader,
         calls: vec![],
         bindings: vec![],
+        items: BTreeSet::new(),
     };
     for arg in &signature.inputs {
         if let FnArg::Typed(arg) = arg
@@ -72,12 +73,56 @@ pub(super) fn body(
         }
     }
     facts.visit_block(block);
-    (facts.calls, facts.bindings)
+    (
+        facts.calls,
+        facts.bindings,
+        facts.items.into_iter().collect(),
+    )
 }
 struct Facts<'a, 'b> {
     reader: &'a Reader<'b>,
     calls: Vec<Call>,
     bindings: Vec<Binding>,
+    /// Names bound by items and `use` declarations inside the body.
+    items: BTreeSet<String>,
+}
+/// The names a body-local item binds; `*` for a glob import. A macro
+/// definition binds no call path.
+fn item_names(item: &Item) -> Vec<String> {
+    let ident = match item {
+        Item::Use(item) => {
+            return crate::scan::item_use_bindings(item)
+                .into_iter()
+                .map(|binding| binding.local_name)
+                .filter(|name| name != "_")
+                .collect();
+        }
+        Item::ForeignMod(block) => {
+            return block
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    syn::ForeignItem::Fn(f) => Some(f.sig.ident.to_string()),
+                    syn::ForeignItem::Static(s) => Some(s.ident.to_string()),
+                    syn::ForeignItem::Type(t) => Some(t.ident.to_string()),
+                    _ => None,
+                })
+                .collect();
+        }
+        Item::ExternCrate(item) => item.rename.as_ref().map_or(&item.ident, |(_, name)| name),
+        Item::Fn(item) => &item.sig.ident,
+        Item::Const(item) => &item.ident,
+        Item::Static(item) => &item.ident,
+        Item::Struct(item) => &item.ident,
+        Item::Enum(item) => &item.ident,
+        Item::Union(item) => &item.ident,
+        Item::Type(item) => &item.ident,
+        Item::Trait(item) => &item.ident,
+        Item::TraitAlias(item) => &item.ident,
+        Item::Mod(item) => &item.ident,
+        _ => return Vec::new(),
+    };
+    vec![ident.to_string()]
 }
 fn initializer(expr: &Expr) -> Option<&Expr> {
     match expr {
@@ -182,7 +227,11 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
     fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
     fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
     fn visit_expr_const(&mut self, _: &'ast syn::ExprConst) {}
-    fn visit_item(&mut self, _: &'ast Item) {}
+    /// A nested item's body is its own scope, but its name shadows the
+    /// module's throughout the enclosing block.
+    fn visit_item(&mut self, item: &'ast Item) {
+        self.items.extend(item_names(item));
+    }
     fn visit_arm(&mut self, arm: &'ast syn::Arm) {
         self.visit_pat(&arm.pat);
         self.visit_expr(&arm.body);

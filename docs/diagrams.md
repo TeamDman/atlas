@@ -81,7 +81,9 @@ happens in one place.
 These are *qualified* relationships. Atlas followed the `use` statements and
 modules to find exactly which item each name refers to; it did not just match
 names. Calls are resolved only when the path or receiver is written clearly in
-the code. Calls Atlas cannot resolve are counted in the limits section and kept
+the code. A name the function body declares itself, with a nested `fn` or a
+`use` inside the body, is not resolved, so the call is never drawn to a
+module item of the same name. Calls Atlas cannot resolve are counted in the limits section and kept
 in the JSON. They are never treated as "no call".
 
 `--scope` selects which files to draw. Files with no arrows still appear, so

@@ -12,8 +12,14 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 - `moved` lists each body that moved file unchanged as a `relocated:` row (JSON
  `exact_relocated`) with both sites; before, it was only counted. A repeated
  name's cross-file pairs are marked ambiguous.
-- **Library (atlas-lib):** `review::moves::MoveReport` has an
- `exact_relocated` field.
+- A call through a name that the function body itself declares, with a
+ nested `fn`, another item or a `use` (including a glob), is left unresolved
+ instead of being drawn to the module's item of that name. This affects
+ `dependencies`, `flow --depth` and the program overview.
+- **Breaking (library, atlas-lib 0.6.0):** `review::moves::MoveReport` has an
+ `exact_relocated` field and `workflow::Workflow` has a `local_names` field.
+ Code that builds either struct or destructures every field must add them.
+ The workflow JSON reads `local_names` as empty when it is missing.
 
 ## cargo-atlas 0.15.0
 

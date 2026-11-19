@@ -157,6 +157,12 @@ impl Index {
         {
             return Target::Summarized(format!("value call {}", p[0]));
         }
+        if shadowed(&f.flow.local_names, &p[0]) {
+            return Target::Summarized(format!(
+                "block-local item or import {} shadows the module's names; not resolved",
+                p[0]
+            ));
+        }
         if p.len() == 1 && f.flow.imports.contains_key(&p[0]) {
             let local = normalize(&f.scope, &p, &self.crates);
             if self.names.contains_key(&local) {
@@ -254,4 +260,12 @@ pub(super) fn normalize(
     }
     scope.extend(path);
     scope
+}
+
+/// Whether a body-local item or import may bind a path's first segment: by
+/// name, or through a body-local glob unless the segment is a path keyword.
+fn shadowed(local_names: &[String], first: &str) -> bool {
+    local_names.iter().any(|name| name == first)
+        || (local_names.iter().any(|name| name == "*")
+            && !matches!(first, "crate" | "self" | "super" | "Self"))
 }
