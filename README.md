@@ -13,6 +13,21 @@ You point it at a Cargo project and ask, from your terminal, a script or CI:
 Atlas only reads your code. It never edits, compiles or runs it, and every
 answer points to the file and line it came from, so you can check it yourself.
 
+<!-- Regenerate from the repository root, once per theme (dark, light):
+     cargo atlas representations --query examples/queries/atlas.json --panel contracts \
+       --backend pele --theme dark --out target/atlas/contracts-dark.svg
+     then copy the .svg into docs/images/. -->
+<a href="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-light.svg">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-dark.svg">
+    <img alt="Atlas drawing its own source: which functions produce and consume its three central types, SourceGraph, Diagram and Artifact, grouped by the file each function lives in" src="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-light.svg">
+  </picture>
+</a>
+
+*Atlas drawing itself: the functions that return or build its three central
+types, grouped by file. Every arrow is a signature or a construction site in
+the source. Click for the full-size image.*
+
 ## What it looks like
 
 ### Find a type, and see how much depends on it

@@ -19,6 +19,8 @@ include = [
     "/src/**",
     "/docs/**",
     "!/docs/**/.*/**",
+    # The README links its images by URL; the package does not need them.
+    "!/docs/images/**",
     "/examples/**",
     "!/examples/**/target/**",
     "/renderer/**",
