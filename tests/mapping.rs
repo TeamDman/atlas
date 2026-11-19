@@ -267,6 +267,7 @@ fn embedded_pele_renders_without_checkout_adapter() {
     let artifact = Pele {
         html: false,
         theme: cargo_atlas::render::Theme::Light,
+        bare: false,
     }
     .render(&d)
     .unwrap();
@@ -282,7 +283,13 @@ fn pele_images_are_dark_by_default_and_carry_concrete_colours() {
     let g = discovery::scan_workspace(f.path()).unwrap();
     let d = project(&g, "src", Detail::Files).unwrap();
     let svg = |theme| {
-        let artifact = Pele { html: false, theme }.render(&d).unwrap();
+        let artifact = Pele {
+            html: false,
+            theme,
+            bare: false,
+        }
+        .render(&d)
+        .unwrap();
         String::from_utf8(artifact.primary.bytes).unwrap()
     };
     let dark = svg(Theme::default());

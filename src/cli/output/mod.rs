@@ -231,10 +231,16 @@ impl Backend {
         self,
         view: cargo_atlas::render::View<'_>,
         theme: Theme,
+        bare: bool,
     ) -> Result<Artifact> {
         match self {
             Self::Ascii => Ascii.render_view(view),
-            Self::Pele => Pele { html: false, theme }.render_view(view),
+            Self::Pele => Pele {
+                html: false,
+                theme,
+                bare,
+            }
+            .render_view(view),
         }
     }
 }
@@ -265,6 +271,7 @@ pub(super) fn render(options: &RenderOptions, diagram: &Diagram) -> Result<Artif
         Backend::Pele => Pele {
             html: options.format == Format::Html,
             theme: options.theme,
+            bare: false,
         }
         .render(diagram),
     }

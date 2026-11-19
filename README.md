@@ -22,11 +22,12 @@ them, grouped by the file each function lives in. Here is Atlas drawing its own
 three central types:
 
 ```console
-$ cargo atlas representations --query examples/queries/atlas.json --panel contracts --backend pele
+$ cargo atlas representations --query examples/queries/atlas.json --panel contracts --backend pele --bare
 ```
 
-<!-- To refresh: run the command above with --theme dark and --theme light,
-     each with --out target/atlas/contracts-THEME.svg, and copy both into docs/images/. -->
+<!-- To refresh: run the command above once with --theme dark and once with
+     --theme light, each with --out target/atlas/contracts-THEME.svg, and copy both
+     into docs/images/. -->
 <a href="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-light.svg">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/flowerornament/atlas/main/docs/images/contracts-dark.svg">
@@ -135,7 +136,7 @@ You need Rust 1.99.1 or newer.
 
 ```sh
 cargo install --locked cargo-atlas
-cargo atlas --version    # should print "cargo-atlas 0.14.0" or later
+cargo atlas --version    # should print "cargo-atlas 0.15.0" or later
 ```
 
 Atlas is a Cargo subcommand: run it as `cargo atlas` from inside your project.

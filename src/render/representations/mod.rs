@@ -12,7 +12,7 @@ use crate::representations::{Reference, Views};
 use crate::{
     Result,
     render::{
-        Artifact, Document, Theme,
+        Artifact, Document, Pele,
         pele::{dimensions, html_text as xml, label, render_source_named},
         theme::Palette,
     },
@@ -76,13 +76,20 @@ fn head() -> String {
 }
 
 /// Compose native Pele panels into one SVG. No source edges are added by composition.
-pub fn pele(v: &Views, panel: Panel, theme: Theme) -> Result<Artifact> {
-    render(v, panel, false, theme.palette())
+/// With `options.bare`, only the panels are drawn: no title, notes or panel headings.
+pub fn pele(v: &Views, panel: Panel, options: &Pele) -> Result<Artifact> {
+    render(v, panel, false, options.theme.palette(), options.bare)
 }
-pub(crate) fn vertical(v: &Views, panel: Panel, palette: &Palette) -> Result<Artifact> {
-    render(v, panel, true, palette)
+pub(crate) fn vertical(v: &Views, panel: Panel, palette: &Palette, bare: bool) -> Result<Artifact> {
+    render(v, panel, true, palette, bare)
 }
-fn render(v: &Views, panel: Panel, vertical: bool, palette: &Palette) -> Result<Artifact> {
+fn render(
+    v: &Views,
+    panel: Panel,
+    vertical: bool,
+    palette: &Palette,
+    bare: bool,
+) -> Result<Artifact> {
     let sources = match panel {
         Panel::All => vec![
             ("A  Representation contracts", contracts::source(v, palette)),
@@ -125,17 +132,32 @@ fn render(v: &Views, panel: Panel, vertical: bool, palette: &Palette) -> Result<
         panels.push((title, svg, w, h));
     }
     let all = matches!(panel, Panel::All);
-    let width = if all {
-        (panels[0].2 + 80.)
-            .max(panels[1].2 + panels[2].2 + 120.)
-            .max(1500.)
+    // Panel 0 spans the top; panels 1 and 2 sit side by side below it.
+    let (margin, top, gap) = if bare {
+        (20., 20., 40.)
     } else {
-        (panels[0].2 + 80.).max(1500.)
+        (40., 205., 85.)
     };
-    let height = if all {
-        panels[0].3 + panels[1].3.max(panels[2].3) + 440.
+    let lower = if all {
+        panels[1].3.max(panels[2].3)
     } else {
-        panels[0].3 + 320.
+        0.
+    };
+    let content = if all {
+        panels[0].2.max(panels[1].2 + panels[2].2 + 40.)
+    } else {
+        panels[0].2
+    };
+    let (width, height) = if bare {
+        (
+            content + 2. * margin,
+            top + panels[0].3 + if all { gap + lower } else { 0. } + margin,
+        )
+    } else {
+        (
+            (content + 2. * margin).max(1500.),
+            panels[0].3 + if all { lower + 440. } else { 320. },
+        )
     };
     let mut out = format!(
         "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\" role=\"img\"><title>{}</title><rect width=\"100%\" height=\"100%\" fill=\"{}\"/>",
@@ -143,6 +165,9 @@ fn render(v: &Views, panel: Panel, vertical: bool, palette: &Palette) -> Result<
         palette.background
     );
     let text = |out: &mut String, x: f64, y: f64, size: u32, s: &str| {
+        if bare {
+            return;
+        }
         write!(
             out,
             "<text x=\"{x}\" y=\"{y}\" font-family=\"system-ui,sans-serif\" font-size=\"{size}\" fill=\"{}\">{}</text>",
@@ -188,11 +213,15 @@ fn render(v: &Views, panel: Panel, vertical: bool, palette: &Palette) -> Result<
     );
     for (i, (title, svg, _, _)) in panels.iter().enumerate() {
         let (x, y) = if i == 0 {
-            (40., 205.)
+            (margin, top)
         } else {
             (
-                if i == 1 { 40. } else { panels[1].2 + 80. },
-                panels[0].3 + 290.,
+                if i == 1 {
+                    margin
+                } else {
+                    margin + panels[1].2 + 40.
+                },
+                top + panels[0].3 + gap,
             )
         };
         text(&mut out, x, y - 20., 23, title);

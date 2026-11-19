@@ -8,9 +8,10 @@ use crate::{
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 /// Append a separate native Pele instrument panel; never join call and contract edges.
-pub fn pele(overview: &Overview, theme: crate::render::Theme) -> Result<crate::render::Artifact> {
-    let palette = theme.palette();
-    let mut artifact = contracts(overview, palette)?;
+/// With `options.bare`, no titles, notes or headings are drawn around the panels.
+pub fn pele(overview: &Overview, options: &crate::render::Pele) -> Result<crate::render::Artifact> {
+    let (palette, bare) = (options.theme.palette(), options.bare);
+    let mut artifact = contracts(overview, palette, bare)?;
     if overview.instruments.is_empty() {
         return Ok(artifact);
     }
@@ -42,13 +43,20 @@ pub fn pele(overview: &Overview, theme: crate::render::Theme) -> Result<crate::r
     let (w, h) = crate::render::pele::dimensions(&main)?;
     let (bw, bh) = crate::render::pele::dimensions(&bottom)?;
     let width = w.max(bw + 80.);
-    let height = h + bh + 120.;
+    let height = h + bh + if bare { 40. } else { 120. };
     artifact.primary.bytes = format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\"><rect width=\"100%\" height=\"100%\" fill=\"{background}\"/>{main}<text x=\"40\" y=\"{}\" font-family=\"system-ui\" font-size=\"24\" fill=\"{heading}\">Verification instruments: observed direct calls, separate from contracts</text><g transform=\"translate(40,{})\">{bottom}</g></svg>",
-        h + 30.,
-        h + 60.,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {width} {height}\" width=\"{width}\" height=\"{height}\"><rect width=\"100%\" height=\"100%\" fill=\"{background}\"/>{main}{heading}<g transform=\"translate(40,{})\">{bottom}</g></svg>",
+        h + if bare { 20. } else { 60. },
         background = palette.background,
-        heading = palette.heading,
+        heading = if bare {
+            String::new()
+        } else {
+            format!(
+                "<text x=\"40\" y=\"{}\" font-family=\"system-ui\" font-size=\"24\" fill=\"{}\">Verification instruments: observed direct calls, separate from contracts</text>",
+                h + 30.,
+                palette.heading
+            )
+        },
     ).into_bytes();
     for d in &mut artifact.companions {
         if d.suffix == "mmd" {
@@ -60,7 +68,7 @@ pub fn pele(overview: &Overview, theme: crate::render::Theme) -> Result<crate::r
 }
 
 /// Each panel's contract figure, stacked top to bottom in panel order.
-fn contracts(overview: &Overview, palette: &Palette) -> Result<Artifact> {
+fn contracts(overview: &Overview, palette: &Palette, bare: bool) -> Result<Artifact> {
     let mut figures = overview
         .panels
         .iter()
@@ -69,6 +77,7 @@ fn contracts(overview: &Overview, palette: &Palette) -> Result<Artifact> {
                 &panel.views,
                 representations::Panel::Contracts,
                 palette,
+                bare,
             )
         })
         .collect::<Result<Vec<_>>>()?;

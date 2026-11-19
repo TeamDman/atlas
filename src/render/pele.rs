@@ -10,12 +10,17 @@ pub struct Pele {
     /// Wrap the SVG in an HTML page with the diagram's notes and evidence links.
     pub html: bool,
     pub theme: Theme,
+    /// Draw only the diagram: leave out the title, notes and panel headings
+    /// Atlas writes around representations, compare and overview figures.
+    /// The evidence keeps everything; graph diagrams have none to leave out.
+    pub bare: bool,
 }
 impl Default for Pele {
     fn default() -> Self {
         Self {
             html: true,
             theme: Theme::default(),
+            bare: false,
         }
     }
 }
@@ -88,9 +93,9 @@ impl Renderer for Pele {
     fn render_view(&self, view: super::View<'_>) -> Result<Artifact> {
         let artifact = match view {
             super::View::Graph(g) => return self.render(g),
-            super::View::Representations(v, p) => crate::representations::pele(v, p, self.theme)?,
-            super::View::Comparison(c) => c.pele(self.theme)?,
-            super::View::Overview(o) => crate::overview::pele(o, self.theme)?,
+            super::View::Representations(v, p) => crate::representations::pele(v, p, self)?,
+            super::View::Comparison(c) => c.pele(self)?,
+            super::View::Overview(o) => crate::overview::pele(o, self)?,
         };
         if !self.html {
             return Ok(artifact);

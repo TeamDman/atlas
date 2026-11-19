@@ -215,6 +215,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
         let svg = Pele {
             html: false,
             theme: cargo_atlas::render::Theme::Light,
+            bare: false,
         }
         .render_view(view)
         .unwrap();
@@ -239,6 +240,7 @@ fn graph_and_table_families_share_backends_without_erasing_their_models() {
     let html = Pele {
         html: true,
         theme: cargo_atlas::render::Theme::Light,
+        bare: false,
     }
     .render_view(View::Representations(
         &views,

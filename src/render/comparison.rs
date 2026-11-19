@@ -30,7 +30,7 @@ fn value<'a>(c: &Change, v: Option<&'a str>) -> &'a str {
     }
 }
 
-pub(crate) fn pele(c: &Comparison, palette: &Palette) -> Result<Artifact> {
+pub(crate) fn pele(c: &Comparison, palette: &Palette, bare: bool) -> Result<Artifact> {
     if c.changes.len() > 40 {
         return Err(
             "more than 40 changes; narrow --query or use ASCII/JSON (nothing truncated)".into(),
@@ -65,6 +65,19 @@ pub(crate) fn pele(c: &Comparison, palette: &Palette) -> Result<Artifact> {
     source.push_str(&palette.before.def("before", ""));
     source.push_str(&palette.after.def("after", ""));
     let svg = pele::render_source_named(&source, "atlas-comparison", palette)?;
+    if bare {
+        // Pele's own drawing already carries a background and padding.
+        return Ok(Artifact {
+            primary: Document {
+                suffix: "svg",
+                bytes: svg.into_bytes(),
+            },
+            companions: vec![Document {
+                suffix: "mmd",
+                bytes: source.into_bytes(),
+            }],
+        });
+    }
     let (w, h) = pele::dimensions(&svg)?;
     let width = (w + 80.).max(1500.);
     let height = h + 350.;

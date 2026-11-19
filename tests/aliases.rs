@@ -126,9 +126,16 @@ fn preparation_picture_shares_callee_identity_without_merging_callers() {
             + "pub fn prepare_again()->Forms { infer() }\npub fn wrapped()->Vec<Forms>{vec![]}\n"),
     );
     let view = representations::project(&facts, &query(&["Forms"])).unwrap();
-    let artifact =
-        representations::pele(&view, Panel::Preparation, cargo_atlas::render::Theme::Light)
-            .unwrap();
+    let artifact = representations::pele(
+        &view,
+        Panel::Preparation,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
+    )
+    .unwrap();
     let source = String::from_utf8(artifact.companions[0].bytes.clone()).unwrap();
     assert_eq!(source.matches("infer()").count(), 1);
     assert!(source.contains("prepare_again()"));

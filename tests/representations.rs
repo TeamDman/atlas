@@ -210,11 +210,41 @@ fn unknowns_and_no_preparation_remain_explicit_in_both_backends() {
     );
     let ascii = representations::ascii(&v, Panel::All);
     assert!(ascii.contains("Unknown observations"));
-    let artifact =
-        representations::pele(&v, Panel::All, cargo_atlas::render::Theme::Light).unwrap();
+    let artifact = representations::pele(
+        &v,
+        Panel::All,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
+    )
+    .unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("viewBox"));
     assert!(svg.contains("Graph"));
+    // Bare draws the same panels without the title, notes and headings.
+    let bare = representations::pele(
+        &v,
+        Panel::All,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: true,
+        },
+    )
+    .unwrap();
+    let bare = String::from_utf8(bare.primary.bytes).unwrap();
+    assert!(bare.contains("Graph"));
+    for text in [
+        "not proved absent",
+        "Representation contracts",
+        "Creation: literals",
+    ] {
+        assert!(svg.contains(text), "{text}");
+        assert!(!bare.contains(text), "{text}");
+    }
+    assert!(bare.len() < svg.len());
 }
 
 #[test]
@@ -239,10 +269,26 @@ fn matrix_renders_nested_borrows_and_contract_titles_keep_all_literal_sites() {
         "checked: &'a Checked, graphs: Vec<&'a Graph> }",
     ) + "\nfn extra()->Graph { let _=Graph {value:1}; Graph {value:2} }";
     let (_f, _, v) = inspect(&source);
-    let artifact =
-        representations::pele(&v, Panel::All, cargo_atlas::render::Theme::Light).unwrap();
-    let matrix =
-        representations::pele(&v, Panel::Retention, cargo_atlas::render::Theme::Light).unwrap();
+    let artifact = representations::pele(
+        &v,
+        Panel::All,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
+    )
+    .unwrap();
+    let matrix = representations::pele(
+        &v,
+        Panel::Retention,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
+    )
+    .unwrap();
     let native = String::from_utf8(matrix.companions[0].bytes.clone()).unwrap();
     assert!(native.contains("#38;graphs*"));
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();

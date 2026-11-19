@@ -4,6 +4,15 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## cargo-atlas 0.15.0
+
+- `--bare` draws only the diagram for `representations`, `compare` and
+ `overview`: no title, notes or panel headings around it. The JSON evidence
+ keeps the notes. Other diagrams have nothing to leave out.
+- **Breaking (library):** `render::Pele` has a `bare` field, and
+ `representations::pele`, `overview::pele` and `Comparison::pele` take
+ `&Pele` instead of a `Theme`, so every drawing option travels together.
+
 ## cargo-atlas 0.14.0
 
 - The overview also keeps each panel within 40 API contract rows, the other

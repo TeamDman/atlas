@@ -178,7 +178,11 @@ fn inferred()->Graph {Default::default()}
         representations::pele(
             &v,
             representations::Panel::All,
-            cargo_atlas::render::Theme::Light,
+            &cargo_atlas::render::Pele {
+                html: false,
+                theme: cargo_atlas::render::Theme::Light,
+                bare: false,
+            },
         )
         .unwrap()
         .primary
@@ -218,7 +222,13 @@ fn comparison_has_aligned_values_revisions_and_no_invented_flow_edges() {
             .iter()
             .any(|c| c.subject.contains("explicitly calls"))
     );
-    let artifact = c.pele(cargo_atlas::render::Theme::Light).unwrap();
+    let artifact = c
+        .pele(&cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        })
+        .unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();
     assert!(svg.contains("baseline-pin") && svg.contains("candidate-pin"));
     assert!(svg.contains("ADDED") && svg.contains("Before") && svg.contains("After"));
@@ -391,7 +401,15 @@ fn an_overview_above_one_figure_is_split_into_module_panels_without_dropping_typ
     let text = overview::ascii(&v);
     assert!(text.contains("PANEL 1 OF 2: s0, s1") && text.contains("PANEL 2 OF 2: s2"));
     assert!(expected.iter().all(|name| text.contains(name.as_str())));
-    let svg = overview::pele(&v, cargo_atlas::render::Theme::Light).unwrap();
+    let svg = overview::pele(
+        &v,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
+    )
+    .unwrap();
     let svg = String::from_utf8(svg.primary.bytes).unwrap();
     assert!(svg.contains("panel 1 of 2: s0, s1") && svg.contains("panel 2 of 2: s2"));
     assert!(expected.iter().all(|name| svg.contains(name.as_str())));
@@ -616,7 +634,11 @@ fn error_type_returners_keep_their_err_position_in_the_producer_view() {
     let artifact = representations::pele(
         &v,
         representations::Panel::Producers,
-        cargo_atlas::render::Theme::Light,
+        &cargo_atlas::render::Pele {
+            html: false,
+            theme: cargo_atlas::render::Theme::Light,
+            bare: false,
+        },
     )
     .unwrap();
     let svg = String::from_utf8(artifact.primary.bytes).unwrap();

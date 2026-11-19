@@ -46,6 +46,11 @@ cargo atlas dependencies --relation calls --backend pele --theme light
 The colours are written into the SVG itself, so the image looks the same in
 a browser, an image viewer or a converter such as `rsvg-convert`.
 
+`representations`, `compare` and `overview` write a title, notes on what the
+figure does not prove, and panel headings around the drawing. Add `--bare` to
+draw only the diagram in a Pele image, for example to put it in a slide or a
+README. Text output is unchanged, and the notes stay in the JSON evidence.
+
 ## Which files depend on which
 
 ```sh

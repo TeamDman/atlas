@@ -17,6 +17,10 @@ pub(crate) struct Options {
     /// Colours for Pele images.
     #[arg(long, value_enum, default_value_t)]
     pub theme: Theme,
+    /// Draw only the diagram in Pele images, without the title, notes and
+    /// panel headings around it. The JSON evidence keeps all of them.
+    #[arg(long)]
+    pub bare: bool,
     /// Output path; Pele defaults to target/atlas/NAME.svg. ASCII defaults to stdout.
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -25,7 +29,7 @@ pub(crate) struct Options {
 }
 impl Options {
     pub fn render_view(&self, view: View<'_>) -> Result<Artifact> {
-        self.backend.render_view(view, self.theme)
+        self.backend.render_view(view, self.theme, self.bare)
     }
     pub fn emit(
         &self,
