@@ -97,56 +97,99 @@ impl Reader<'_> {
     pub(super) fn block(&self, block: &syn::Block) -> Vec<Step> {
         let mut out = Vec::new();
         for stmt in &block.stmts {
-            match stmt {
-                Stmt::Local(local) => {
-                    if let Some(init) = &local.init {
-                        let mut steps = self.expr(&init.expr);
-                        if let Some(step) = steps.last_mut() {
-                            if let Step::Action { binding, .. } = step {
-                                *binding = Some(self.text(local.pat.span()));
-                            }
-                            let label = match step {
-                                Step::Borrow { label, .. }
-                                | Step::Action { label, .. }
-                                | Step::Match { label, .. }
-                                | Step::Branch { label, .. }
-                                | Step::Loop { label, .. }
-                                | Step::Block { label, .. }
-                                | Step::Exit { label, .. }
-                                | Step::Opaque { label, .. } => label,
-                            };
-                            *label = format!("{} = {label}", self.text(local.pat.span()));
-                        }
-                        out.extend(steps);
-                        if let Some((_, diverge)) = &init.diverge {
-                            out.push(Step::Branch {
-                                label: "let-else (pattern does not match)".into(),
-                                arms: vec![
-                                    Arm {
-                                        label: "else".into(),
-                                        steps: self.expr(diverge),
-                                    },
-                                    Arm {
-                                        label: "pattern matches".into(),
-                                        steps: vec![],
-                                    },
-                                ],
-                                site: self.site(local.span()),
-                            });
-                        }
-                    }
-                }
-                Stmt::Expr(expr, _) => out.extend(self.expr(expr)),
-                Stmt::Macro(m) => out.push(Step::Opaque {
-                    label: self.text(m.span()),
-                    fallible: false,
-                    site: self.site(m.span()),
-                }),
-                // Declarations run nothing; Workflow::declarations lists them.
-                Stmt::Item(_) => {}
-            }
+            let steps = self.statement(stmt);
+            out.extend(self.cfg_gated(stmt, steps));
         }
         out
+    }
+    fn statement(&self, stmt: &Stmt) -> Vec<Step> {
+        let mut out = Vec::new();
+        match stmt {
+            Stmt::Local(local) => {
+                if let Some(init) = &local.init {
+                    let mut steps = self.expr(&init.expr);
+                    if let Some(step) = steps.last_mut() {
+                        if let Step::Action { binding, .. } = step {
+                            *binding = Some(self.text(local.pat.span()));
+                        }
+                        let label = match step {
+                            Step::Borrow { label, .. }
+                            | Step::Action { label, .. }
+                            | Step::Match { label, .. }
+                            | Step::Branch { label, .. }
+                            | Step::Loop { label, .. }
+                            | Step::Block { label, .. }
+                            | Step::Exit { label, .. }
+                            | Step::Opaque { label, .. } => label,
+                        };
+                        *label = format!("{} = {label}", self.text(local.pat.span()));
+                    }
+                    out.extend(steps);
+                    if let Some((_, diverge)) = &init.diverge {
+                        out.push(Step::Branch {
+                            label: "let-else (pattern does not match)".into(),
+                            arms: vec![
+                                Arm {
+                                    label: "else".into(),
+                                    steps: self.expr(diverge),
+                                },
+                                Arm {
+                                    label: "pattern matches".into(),
+                                    steps: vec![],
+                                },
+                            ],
+                            site: self.site(local.span()),
+                        });
+                    }
+                }
+            }
+            Stmt::Expr(expr, _) => out.extend(self.expr(expr)),
+            Stmt::Macro(m) => out.push(Step::Opaque {
+                label: self.text(m.span()),
+                fallible: false,
+                site: self.site(m.span()),
+            }),
+            // Declarations run nothing; Workflow::declarations lists them.
+            Stmt::Item(_) => {}
+        }
+        out
+    }
+    /// A statement under `#[cfg(...)]` (or a `cfg_attr` that adds one) is
+    /// compiled only where its predicate holds. The predicate is not
+    /// evaluated: the steps become one arm of a branch named by the
+    /// attributes as written, beside an empty arm.
+    fn cfg_gated(&self, stmt: &Stmt, steps: Vec<Step>) -> Vec<Step> {
+        let attrs = match stmt {
+            Stmt::Local(local) => local.attrs.as_slice(),
+            Stmt::Expr(expr, _) => expr_attrs(expr),
+            Stmt::Macro(m) => m.attrs.as_slice(),
+            Stmt::Item(_) => &[],
+        };
+        let gates: Vec<_> = attrs
+            .iter()
+            .filter(|attr| {
+                attr.path().is_ident("cfg")
+                    || (attr.path().is_ident("cfg_attr") && self.text(attr.span()).contains("cfg("))
+            })
+            .map(|attr| self.text(attr.span()))
+            .collect();
+        if gates.is_empty() || steps.is_empty() {
+            return steps;
+        }
+        vec![Step::Branch {
+            label: format!("{} (predicate not evaluated)", gates.join(" ")),
+            arms: vec![
+                Arm {
+                    label: "compiled where the predicate holds".into(),
+                    steps,
+                },
+                Arm {
+                    label: "not compiled otherwise".into(),
+                    steps: vec![],
+                },
+            ],
+            site: self.site(stmt.span()),
+        }]
     }
     fn operand(&self, expr: &Expr) -> Vec<Step> {
         if matches!(expr, Expr::Path(_) | Expr::Lit(_)) {
@@ -458,6 +501,24 @@ impl Reader<'_> {
     }
 }
 
+/// An expression's outer attributes, as written.
+fn expr_attrs(expr: &Expr) -> &[syn::Attribute] {
+    macro_rules! attrs {
+        ($($variant:ident),* $(,)?) => {
+            match expr {
+                $(Expr::$variant(e) => &e.attrs,)*
+                _ => &[],
+            }
+        };
+    }
+    attrs!(
+        Array, Assign, Async, Await, Binary, Block, Break, Call, Cast, Closure, Const, Continue,
+        Field, ForLoop, Group, If, Index, Infer, Let, Lit, Loop, Macro, Match, MethodCall, Paren,
+        Path, Range, RawAddr, Reference, Repeat, Return, Struct, Try, TryBlock, Tuple, Unary,
+        Unsafe, While, Yield,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -576,6 +637,43 @@ mod tests {
                 "x = read(p())",
                 "use_it(x)"
             ]
+        );
+    }
+
+    #[test]
+    fn a_cfg_statement_is_conditional_on_its_predicate_as_written() {
+        let source = "fn f() {\n    #[cfg(unix)]\n    unsafe { signal(); }\n    #[cfg(not(test))]\n    let x = load();\n    #[cfg_attr(feature = \"slow\", cfg(any()))]\n    trace();\n    #[allow(unused)]\n    plain();\n}";
+        let flow = parse(source, "lib.rs", "f").unwrap();
+        let gated: Vec<_> = flow
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::Branch { label, arms, .. } => Some((
+                    label.as_str(),
+                    labels(&arms[0].steps),
+                    arms[1].steps.is_empty(),
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(gated.len(), 3, "{:?}", flow.steps);
+        assert_eq!(gated[0].0, "#[cfg(unix)] (predicate not evaluated)");
+        assert_eq!(gated[0].1[0], "unsafe block, through line 3");
+        assert_eq!(gated[1].0, "#[cfg(not(test))] (predicate not evaluated)");
+        assert_eq!(gated[1].1, ["x = load()"]);
+        assert!(
+            gated[2]
+                .0
+                .starts_with("#[cfg_attr(feature = \"slow\", cfg(any()))]")
+        );
+        assert!(gated.iter().all(|(_, _, empty)| *empty));
+        // Other attributes leave a statement as it is (its label is its
+        // written text, attributes included).
+        assert_eq!(labels(&flow.steps[3..]), ["#[allow(unused)] plain()"]);
+        assert!(
+            flow.ascii().contains("| not compiled otherwise"),
+            "{}",
+            flow.ascii()
         );
     }
 

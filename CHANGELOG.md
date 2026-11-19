@@ -6,6 +6,9 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws a statement under `#[cfg(...)]`, or under a `cfg_attr` that adds
+ one, as a branch named by the attribute as written: its steps on one arm,
+ nothing on the other. The predicate is not evaluated.
 - In a jj workspace, a revision jj cannot resolve says Atlas read it as a jj
  revision. A git `HEAD`, `HEAD~N` or `HEAD^` spelling also gets its jj
  spelling: jj keeps git's HEAD at `@-`, so `HEAD~1` is `@--`.

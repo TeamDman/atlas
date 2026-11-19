@@ -208,6 +208,10 @@ A compound assignment such as `total[i()] += next()?` evaluates its operands
 in an order that depends on their types, so when both sides have steps, Atlas
 draws both orders as a branch.
 
+A statement under `#[cfg(...)]` is drawn as a branch named by the attribute
+as written: its steps on one arm, nothing on the other. Atlas does not decide
+which targets compile it.
+
 An item or `use` written inside the body, such as a nested `fn`, runs nothing,
 so it is not a step: the text output lists it under the heading and a diagram
 lists it in its notes.
