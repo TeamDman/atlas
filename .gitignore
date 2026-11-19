@@ -3,3 +3,7 @@
 /.jj/
 /artifacts/
 /examples/tutorial/target/
+.claude/*
+!.claude/settings.json
+.codex/*
+!.codex/config.toml

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Run once by `desk` in a new sub-agent desk, from the desk's root. A desk checks
+# out tracked files only; this links the maintainer's untracked companions from
+# the anchor checkout (the one holding .beads), when the anchor has them.
+# `desk` writes .beads/redirect from the seat. Idempotent; fails loudly, so
+# `desk` retires a desk it could not set up.
+set -euo pipefail
+
+[ -f .beads/redirect ] || { echo "desk-setup: no .beads/redirect; desk writes it from the seat" >&2; exit 1; }
+anchor="$(dirname "$(cat .beads/redirect)")"
+[ -d "$anchor" ] || { echo "desk-setup: anchor $anchor is not a directory" >&2; exit 1; }
+
+for companion in .private CLAUDE.local.md; do
+    [ -e "$anchor/$companion" ] || continue
+    if [ -e "$companion" ] && [ ! -L "$companion" ]; then
+        echo "desk-setup: $companion exists and is not a link; leaving it" >&2
+        exit 1
+    fi
+    ln -sfn "$anchor/$companion" "$companion"
+done

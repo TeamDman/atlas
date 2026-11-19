@@ -4,7 +4,7 @@ A read-only Rust source intelligence library and CLI. One source model supports 
 
 ## Work
 
-Read ARCHITECTURE.md for code ownership and execution flow, and CONTRIBUTING.md for the workflow. Run `just check` before publishing. Never change an inspected project's source as a side effect of scanning or rendering it. Keep project-specific conventions out of Atlas: they belong in adapters and wrappers owned by the projects that use them.
+Read ARCHITECTURE.md for code ownership and execution flow, and CONTRIBUTING.md for the workflow. Publish with `just land`, which runs `just check` on exactly the described jj change and then pushes it; never push around it. Never change an inspected project's source as a side effect of scanning or rendering it. Keep project-specific conventions out of Atlas: they belong in adapters and wrappers owned by the projects that use them.
 
 ## Build
 
