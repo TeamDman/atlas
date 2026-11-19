@@ -6,6 +6,8 @@ library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 
 ## Unreleased
 
+- `flow` draws the steps inside an `unsafe` block after an `unsafe block,
+ through line N` marker, instead of one opaque step.
 - `flow` draws an array repeat `[value; N]` with its element expression as a
  step, evaluated once, instead of one opaque step.
 - `flow` no longer draws an item or `use` written inside a body as an opaque

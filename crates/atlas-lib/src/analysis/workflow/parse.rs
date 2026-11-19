@@ -163,6 +163,18 @@ impl Reader<'_> {
         let site = self.site(expr.span());
         match expr {
             Expr::Block(b) if b.label.is_none() => self.block(&b.block),
+            // The steps run as written; the marker says the compiler does not
+            // check the operations through the block's closing line.
+            Expr::Unsafe(e) => {
+                let mut steps = vec![Step::Action {
+                    binding: None,
+                    label: format!("unsafe block, through line {}", site.end_line),
+                    fallible: false,
+                    site: site.clone(),
+                }];
+                steps.extend(self.block(&e.block));
+                steps
+            }
             Expr::Paren(e) => self.expr(&e.expr),
             Expr::Group(e) => self.expr(&e.expr),
             Expr::Try(e) => {
@@ -513,6 +525,25 @@ mod tests {
         assert_eq!(
             labels(&flow.steps),
             ["seed()", "[seed(); 4]", "fill([seed(); 4])"]
+        );
+    }
+
+    #[test]
+    fn an_unsafe_block_shows_its_steps_between_markers() {
+        let flow = parse(
+            "fn f() { let x = unsafe { read(p()) }; use_it(x); }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        assert_eq!(
+            labels(&flow.steps),
+            [
+                "unsafe block, through line 1",
+                "p()",
+                "x = read(p())",
+                "use_it(x)"
+            ]
         );
     }
 
