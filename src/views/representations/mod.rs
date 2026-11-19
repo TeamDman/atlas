@@ -8,7 +8,8 @@ pub use atlas_lib::representations::{
     Constant, Constructor, Facts, Function, Literal, Reference, ResolvedCall, Role, Type,
     UnknownCall, UnknownType, extract,
 };
-pub use project::{Contract, Preparation, Producers, Views, project};
+pub(crate) use project::select;
+pub use project::{Contract, MAX_ROWS, MAX_TYPES, Preparation, Producers, Views, project};
 use serde::{Deserialize, Serialize};
 
 /// One symbol selector. A name must resolve uniquely; qualify with its physical file.

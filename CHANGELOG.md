@@ -4,6 +4,16 @@ Atlas has two packages: `cargo-atlas` (the `cargo atlas` command and its
 library) and `atlas-lib`. Before 0.11.0 they were named `atlas` and
 `atlas-core`. Versions below name the package they apply to.
 
+## cargo-atlas 0.14.0
+
+- The overview also keeps each panel within 40 API contract rows, the other
+ figure limit, so a workspace with many public methods splits into more panels
+ instead of refusing. Every contract still appears. A module that alone needs
+ more than 12 types or 40 rows is refused with both counts.
+- **Breaking (library):** `representations::MAX_TYPES` and `MAX_ROWS` name the
+ figure limits; `overview::PANEL_TYPES` is removed in their favour. User
+ `representations` queries keep both limits and their messages.
+
 ## cargo-atlas 0.13.0
 
 - `cargo atlas overview` no longer refuses when the declared stages select more

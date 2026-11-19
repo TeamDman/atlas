@@ -287,8 +287,13 @@ fn source_declarations_choose_apis_but_not_edges_and_instruments_survive() {
 }
 /// A workspace of stages `s0`, `s1`, ... where stage `i` declares `sizes[i]`
 /// types and its entry `run` returns all of them. Each later stage's entry also
-/// takes the previous stage's first type, a cross-stage form.
-fn staged(sizes: &[usize]) -> (Fixture, Facts, cargo_atlas::architecture::Architecture) {
+/// takes the previous stage's first type, a cross-stage form. Each stage also
+/// has `extra` private functions that build its first type literally; each is
+/// one more API contract row.
+fn staged(
+    sizes: &[usize],
+    extra: usize,
+) -> (Fixture, Facts, cargo_atlas::architecture::Architecture) {
     use std::fmt::Write;
     let rows: Vec<_> = (0..sizes.len())
         .map(|i| format!("(\"s{i}\",\"run\",Layer::Stage)"))
@@ -309,15 +314,24 @@ fn staged(sizes: &[usize]) -> (Fixture, Facts, cargo_atlas::architecture::Archit
         let names: Vec<_> = (0..size).map(|t| format!("S{i}T{t}")).collect();
         let mut text = String::new();
         for name in &names {
-            writeln!(text, "pub struct {name};").expect("formatting into a String cannot fail");
+            writeln!(text, "pub struct {name} {{}}").expect("formatting into a String cannot fail");
         }
         let input = if i == 0 {
             String::new()
         } else {
             format!("_: crate::s{}::S{}T0", i - 1, i - 1)
         };
+        for k in 0..extra {
+            writeln!(text, "fn build{k}() {{ let _ = S{i}T0 {{}}; }}")
+                .expect("formatting into a String cannot fail");
+        }
+        let values = names
+            .iter()
+            .map(|n| format!("{n} {{}}"))
+            .collect::<Vec<_>>()
+            .join(",");
         let names = names.join(",");
-        writeln!(text, "pub fn run({input})->({names},){{({names},)}}")
+        writeln!(text, "pub fn run({input})->({names},){{({values},)}}")
             .expect("formatting into a String cannot fail");
         f.write(&format!("src/s{i}.rs"), &text);
     }
@@ -340,7 +354,7 @@ fn staged(sizes: &[usize]) -> (Fixture, Facts, cargo_atlas::architecture::Archit
 
 #[test]
 fn an_overview_above_one_figure_is_split_into_module_panels_without_dropping_types() {
-    let (_f, facts, architecture) = staged(&[5, 5, 5]);
+    let (_f, facts, architecture) = staged(&[5, 5, 5], 0);
     let v = overview::project(&facts, &architecture).unwrap();
     // Whole modules, packed in declared order into panels of at most 12.
     let modules: Vec<_> = v.panels.iter().map(|p| p.modules.clone()).collect();
@@ -385,12 +399,15 @@ fn an_overview_above_one_figure_is_split_into_module_panels_without_dropping_typ
 
 #[test]
 fn one_module_above_a_figure_refuses_by_name_and_user_queries_keep_their_cap() {
-    let (_f, facts, architecture) = staged(&[3, 13]);
+    let (_f, facts, architecture) = staged(&[3, 13], 0);
     let error = overview::project(&facts, &architecture)
         .err()
         .unwrap()
         .to_string();
-    assert!(error.contains("module `s1` declares 13"), "{error}");
+    assert!(
+        error.contains("module `s1` alone selects 13 types"),
+        "{error}"
+    );
     let query = representations::Query {
         title: "thirteen".into(),
         types: (0..13)
@@ -408,6 +425,62 @@ fn one_module_above_a_figure_refuses_by_name_and_user_queries_keep_their_cap() {
         .unwrap()
         .to_string();
     assert!(error.contains("select 1–12 types per figure"), "{error}");
+}
+
+#[test]
+fn overview_panels_also_split_on_api_contracts_and_keep_every_contract() {
+    // Six types fit one figure, but each stage brings 16 contract rows.
+    let (_f, facts, architecture) = staged(&[2, 2, 2], 15);
+    let v = overview::project(&facts, &architecture).unwrap();
+    let modules: Vec<_> = v.panels.iter().map(|p| p.modules.clone()).collect();
+    assert_eq!(modules, [vec!["s0", "s1"], vec!["s2"]]);
+    assert!(v.panels.iter().all(|p| p.views.contracts.len() <= 40));
+    // Every builder and every entry is drawn in some panel.
+    let drawn: std::collections::BTreeSet<_> = v
+        .panels
+        .iter()
+        .flat_map(|p| p.views.contracts.iter())
+        .map(|c| (c.function.file.clone(), c.function.name.clone()))
+        .collect();
+    for i in 0..3 {
+        let file = format!("src/s{i}.rs");
+        assert!(drawn.contains(&(file.clone(), "run".to_owned())));
+        for k in 0..15 {
+            assert!(
+                drawn.contains(&(file.clone(), format!("build{k}"))),
+                "s{i} build{k}"
+            );
+        }
+    }
+}
+
+#[test]
+fn one_module_above_forty_contracts_refuses_by_name_and_user_queries_keep_the_row_limit() {
+    let (_f, facts, architecture) = staged(&[1, 2], 41);
+    let error = overview::project(&facts, &architecture)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(
+        error.contains("module `s0` alone selects 1 types and 4"),
+        "{error}"
+    );
+    assert!(error.contains("API contracts"), "{error}");
+    let query = representations::Query {
+        title: "one".into(),
+        types: vec![representations::Selector {
+            name: "S0T0".into(),
+            file: Some("src/s0.rs".into()),
+        }],
+        apis: vec![],
+        preparation_files: vec![],
+        preparation_functions: vec![],
+    };
+    let error = representations::project(&facts, &query)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("view exceeds 40 API contracts"), "{error}");
 }
 
 #[test]

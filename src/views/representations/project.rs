@@ -55,14 +55,30 @@ fn function<'a>(facts: &'a Facts, selector: &Selector) -> Result<&'a Function> {
     };
     Ok(function)
 }
+/// Types one figure may hold.
+pub const MAX_TYPES: usize = 12;
+/// API contract rows, and separately preparation rows, one figure may hold.
+pub const MAX_ROWS: usize = 40;
+
 /// Resolve every selected name uniquely; an ambiguous name is an error, not a guess.
+/// A person's question is limited to [`MAX_TYPES`] types and [`MAX_ROWS`] rows.
 pub fn project(facts: &Facts, query: &Query) -> Result<Views> {
-    if query.types.is_empty() || query.types.len() > 12 {
+    if query.types.is_empty() || query.types.len() > MAX_TYPES {
         return Err(
             "select 1–12 types per figure; use complementary questions for larger populations"
                 .into(),
         );
     }
+    let views = select(facts, query)?;
+    if views.contracts.len() > MAX_ROWS || views.preparation.len() > MAX_ROWS {
+        return Err("view exceeds 40 API contracts or preparation rows; narrow the saved question (nothing was truncated)".into());
+    }
+    Ok(views)
+}
+
+/// The projection without the figure limits, for a view that divides a derived
+/// population itself and must check the limits per figure.
+pub(crate) fn select(facts: &Facts, query: &Query) -> Result<Views> {
     let mut selected = BTreeMap::new();
     for s in &query.types {
         let found: Vec<_> = facts
@@ -205,9 +221,6 @@ pub fn project(facts: &Facts, query: &Query) -> Result<Views> {
     preparation.sort_by(|a, b| {
         (&a.function.file, a.function.line).cmp(&(&b.function.file, b.function.line))
     });
-    if contracts.len() > 40 || preparation.len() > 40 {
-        return Err("view exceeds 40 API contracts or preparation rows; narrow the saved question (nothing was truncated)".into());
-    }
     for file in &query.preparation_files {
         if !facts.fingerprints.iter().any(|(f, _)| f == file) {
             return Err(

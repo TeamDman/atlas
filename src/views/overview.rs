@@ -6,15 +6,13 @@
 use crate::{
     Result,
     architecture::{Architecture, Kind},
-    representations::{self, Facts, Function, Query, Role, Selector, Views},
+    representations::{self, Facts, Function, MAX_ROWS, MAX_TYPES, Query, Role, Selector, Views},
 };
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 fn success(r: &representations::Reference) -> bool {
     r.role == Role::Output && !r.borrow && !r.wrappers.iter().any(|w| w == "Result[1]")
 }
-/// Types one contract figure may hold; the same limit applies to user queries.
-pub const PANEL_TYPES: usize = 12;
 #[derive(Serialize)]
 pub struct Overview {
     /// Contract figures in declared module order. One panel when the selected
@@ -168,7 +166,7 @@ pub fn project(facts: &Facts, architecture: &Architecture) -> Result<Overview> {
             "producing forms accepted by other stages or constructing an entry type. ",
             "Error alternatives and isolated surface metadata do not become main forms. ",
             "Extra observed literal initializers survive selection. ",
-            "Above 12 types, panels group whole declaring modules in declared order; ",
+            "Above 12 types or 40 API contracts, panels group whole declaring modules in declared order; ",
             "each panel also shows every selected operation taking or returning its types. ",
             "Instrument calls are separate observations; no runtime order inferred."
         )
@@ -176,9 +174,10 @@ pub fn project(facts: &Facts, architecture: &Architecture) -> Result<Overview> {
     })
 }
 
-/// Divide the selected types into panels of at most [`PANEL_TYPES`], keeping
-/// each declaring module's types together. A module with more than one
-/// figure's worth refuses rather than splitting or dropping any.
+/// Divide the selected types into panels within both figure limits,
+/// [`MAX_TYPES`] types and [`MAX_ROWS`] API contracts, keeping each
+/// declaring module's types together. A module that alone exceeds a limit
+/// refuses rather than being split, and nothing is dropped.
 fn panels(
     facts: &Facts,
     architecture: &Architecture,
@@ -203,63 +202,84 @@ fn panels(
         }
     }
     groups.retain(|(_, types)| !types.is_empty());
-    if let Some((module, types)) = groups.iter().find(|(_, types)| types.len() > PANEL_TYPES) {
-        return Err(format!(
-            "overview: module `{}` declares {} of the selected types; one figure holds at most {PANEL_TYPES}, and Atlas does not split a module or drop types",
-            module.as_deref().unwrap_or(OUTSIDE),
-            types.len()
-        )
-        .into());
-    }
-    // Pack whole modules, in order, into as few panels as fit.
-    let mut packed: Vec<Vec<usize>> = vec![];
-    let mut size = 0;
-    for (index, (_, types)) in groups.iter().enumerate() {
-        match packed.last_mut() {
-            Some(panel) if size + types.len() <= PANEL_TYPES => panel.push(index),
-            _ => {
-                packed.push(vec![index]);
-                size = 0;
-            }
-        }
-        size += types.len();
-    }
-    let references = |op: &Function, ids: &BTreeSet<&str>| {
+    let all: BTreeSet<&str> = type_ids.iter().map(String::as_str).collect();
+    let touches = |op: &Function, ids: &BTreeSet<&str>| {
         facts
             .references
             .iter()
             .any(|r| r.from == op.id && ids.contains(r.to.as_str()))
     };
-    let all: BTreeSet<&str> = type_ids.iter().map(String::as_str).collect();
-    let count = packed.len();
-    let mut panels = Vec::new();
-    let mut split = Vec::new();
-    for (number, members) in packed.iter().enumerate() {
+    // An operation touching no selected type is drawn with its own module's
+    // group, or with the first group; it is never left out.
+    let home = |op: &Function| {
+        let module = module_of(&op.file);
+        groups
+            .iter()
+            .position(|(name, _)| *name == module)
+            .unwrap_or(0)
+    };
+    let figure = |members: &[usize], title: String| -> Result<Views> {
         let types: Vec<_> = members
             .iter()
             .flat_map(|&g| groups[g].1.iter().copied())
             .collect();
         let ids: BTreeSet<&str> = types.iter().map(|t| t.id.as_str()).collect();
-        let modules: Vec<String> = members
-            .iter()
-            .map(|&g| groups[g].0.clone().unwrap_or_else(|| OUTSIDE.into()))
-            .collect();
-        // An operation touching no selected type is drawn with its own module,
-        // or in the first panel; it is never left out.
-        let home = |op: &Function| {
-            let module = module_of(&op.file);
-            packed
-                .iter()
-                .position(|m| m.iter().any(|&g| groups[g].0 == module))
-                .unwrap_or(0)
-        };
         let apis = operations
             .iter()
-            .filter(|op| references(op, &ids) || (!references(op, &all) && home(op) == number))
+            .filter(|op| touches(op, &ids) || (!touches(op, &all) && members.contains(&home(op))))
             .map(|op| Selector {
                 name: op.name.clone(),
                 file: Some(op.file.clone()),
             })
+            .collect();
+        representations::select(
+            facts,
+            &Query {
+                title,
+                types: types
+                    .iter()
+                    .map(|ty| Selector {
+                        name: ty.name.clone(),
+                        file: Some(ty.file.clone()),
+                    })
+                    .collect(),
+                apis,
+                preparation_files: vec![],
+                preparation_functions: vec![],
+            },
+        )
+    };
+    let fits = |views: &Views| views.types.len() <= MAX_TYPES && views.contracts.len() <= MAX_ROWS;
+    // Pack whole modules, in order, into as few panels as fit both limits.
+    let mut packed: Vec<Vec<usize>> = vec![];
+    let mut current: Vec<usize> = vec![];
+    for (index, (module, _)) in groups.iter().enumerate() {
+        let mut trial = current.clone();
+        trial.push(index);
+        if fits(&figure(&trial, String::new())?) {
+            current = trial;
+            continue;
+        }
+        let alone = figure(&[index], String::new())?;
+        if !fits(&alone) {
+            return Err(format!(
+                "overview: module `{}` alone selects {} types and {} API contracts; one figure holds at most {MAX_TYPES} types and {MAX_ROWS} contracts, and Atlas does not split a module or drop either",
+                module.as_deref().unwrap_or(OUTSIDE),
+                alone.types.len(),
+                alone.contracts.len()
+            )
+            .into());
+        }
+        packed.push(std::mem::replace(&mut current, vec![index]));
+    }
+    packed.push(current);
+    let count = packed.len();
+    let mut panels = Vec::new();
+    let mut split = Vec::new();
+    for (number, members) in packed.iter().enumerate() {
+        let modules: Vec<String> = members
+            .iter()
+            .map(|&g| groups[g].0.clone().unwrap_or_else(|| OUTSIDE.into()))
             .collect();
         let title = if count == 1 {
             "Representation contracts from declared stage APIs".to_owned()
@@ -270,19 +290,6 @@ fn panels(
                 modules.join(", ")
             )
         };
-        let query = Query {
-            title,
-            types: types
-                .iter()
-                .map(|ty| Selector {
-                    name: ty.name.clone(),
-                    file: Some(ty.file.clone()),
-                })
-                .collect(),
-            apis,
-            preparation_files: vec![],
-            preparation_functions: vec![],
-        };
         for &g in members {
             split.push(Group {
                 module: groups[g].0.clone(),
@@ -292,7 +299,7 @@ fn panels(
         }
         panels.push(Panel {
             modules,
-            views: representations::project(facts, &query)?,
+            views: figure(members, title)?,
         });
     }
     Ok((panels, split))

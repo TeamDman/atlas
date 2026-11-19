@@ -4,7 +4,7 @@ resolver = "3"
 
 [package]
 name = "cargo-atlas"
-version = "0.13.0"
+version = "0.14.0"
 edition = "2024"
 rust-version = "1.99.1"
 description = "Answer questions about how a Rust codebase is put together: navigation, change review, diagrams and architecture checks"
