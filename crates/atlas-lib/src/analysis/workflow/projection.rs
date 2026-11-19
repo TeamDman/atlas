@@ -107,7 +107,7 @@ impl<'a> Builder<'a> {
             notes: vec![
                 "Source-control possibilities, not path feasibility or a proof of termination. Panics, unwinding, destructors, overloaded operations and macro effects are not inferred.".into(),
                 "Call occurrences have distinct continuations. Unexpanded calls continue only if they return; recursion and unresolved bodies are visible boundaries.".into(),
-                "Pattern failure skips its guard; guard failure tries the next pattern. Each ? exits the current function on its residual branch.".into(),
+                "Pattern failure skips its guard; guard failure tries the next pattern. A ? exits its enclosing function or directly awaited async block on its residual branch.".into(),
             ]
             .into_iter()
             .chain(self.declared)
@@ -305,6 +305,7 @@ impl<'a> Builder<'a> {
                 | Step::Match { label, .. }
                 | Step::Loop { label, .. }
                 | Step::Block { label, .. }
+                | Step::AwaitBlock { label, .. }
                 | Step::Exit { label, .. } => label.clone(),
             };
             let id = self.node(&label, step.site());
@@ -420,6 +421,16 @@ impl<'a> Builder<'a> {
                     self.loops.pop();
                     self.connect(ends, &id);
                     vec![exit]
+                }
+                Step::AwaitBlock { body, site, .. } => {
+                    let end = self.node("async block completes (value or residual)", site);
+                    let outer_exit = std::mem::replace(&mut self.exit, end.clone());
+                    let outer_loops = std::mem::take(&mut self.loops);
+                    let ends = self.steps(body, vec![id.clone()]);
+                    self.connect(ends, &end);
+                    self.loops = outer_loops;
+                    self.exit = outer_exit;
+                    vec![end]
                 }
                 Step::Block {
                     body, target, site, ..
@@ -564,6 +575,129 @@ mod tests {
                     .unwrap()
                     .label
                     .starts_with("return from"))
+        );
+    }
+
+    #[test]
+    fn directly_awaited_block_has_its_own_residual_and_return_target() {
+        let flow = crate::workflow::parse::parse(
+            "async fn f(){let result = async { if stop { return fail(); } read().await?; Ok(()) }.await; after(result)?;}",
+            "lib.rs",
+            "f",
+        ).unwrap();
+        let diagram = flow.diagram();
+        diagram.validate().unwrap();
+        let block_end = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label == "async block completes (value or residual)")
+            .unwrap();
+        let function_end = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label.starts_with("return from f"))
+            .unwrap();
+        let ret = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label == "return fail()")
+            .unwrap();
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == ret.id && e.to == block_end.id)
+        );
+        let early: Vec<_> = diagram
+            .nodes
+            .iter()
+            .filter(|n| n.label == "? returns early (residual)")
+            .collect();
+        assert_eq!(early.len(), 2);
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == early[0].id && e.to == block_end.id)
+        );
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == early[1].id && e.to == function_end.id)
+        );
+        let after = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label.contains("await completed"))
+            .unwrap();
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == block_end.id && e.to == after.id)
+        );
+    }
+
+    #[test]
+    fn question_after_await_propagates_only_after_the_future_completes() {
+        let flow = crate::workflow::parse::parse(
+            "async fn f(){ let x = async { read().await?; Ok(()) }.await?; done(x); }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        let diagram = flow.diagram();
+        diagram.validate().unwrap();
+        let block_end = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label == "async block completes (value or residual)")
+            .unwrap();
+        let function_end = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label.starts_with("return from f"))
+            .unwrap();
+        let early: Vec<_> = diagram
+            .nodes
+            .iter()
+            .filter(|n| n.label == "? returns early (residual)")
+            .collect();
+        assert_eq!(early.len(), 2);
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == early[0].id && e.to == block_end.id)
+        );
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == early[1].id && e.to == function_end.id)
+        );
+        let await_done = diagram
+            .nodes
+            .iter()
+            .find(|n| n.label == "await completed")
+            .unwrap();
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == block_end.id && e.to == await_done.id)
+        );
+        let outer_try = diagram
+            .edges
+            .iter()
+            .find(|e| e.from == await_done.id)
+            .unwrap();
+        assert!(
+            diagram
+                .edges
+                .iter()
+                .any(|e| e.from == outer_try.to && e.to == early[1].id)
         );
     }
 }

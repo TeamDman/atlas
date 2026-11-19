@@ -217,12 +217,16 @@ so it is not a step: the text output lists it under the heading and a diagram
 lists it in its notes.
 
 Some steps are *opaque*: Atlas knows they are there but does not look inside.
-Macro calls, closures, `async` and `try` blocks and syntax Atlas does not
-support are opaque, and Atlas does not guess what they do. An `unsafe` block
+Macro calls, closures, unawaited `async` blocks, `try` blocks and syntax Atlas
+does not support are opaque, and Atlas does not guess what they do. A directly
+awaited `async { ... }.await` shows a separate construction, poll body, and
+completion: `return` and `?` within that body complete the async block, while
+an outer `?` can propagate its result. Calls inside that block are marked
+opaque and are not indexed for expansion. An `unsafe` block
 shows its steps after a marker that names the line where the block ends. A
 labelled block (`'found: { ... }`) shows its steps, and `break 'found` leaves
-it. `x.await` shows `x`'s steps, then one await step; when the future is
-polled is not shown.
+it. Other `x.await` forms show `x`'s steps, then one await step; polling
+frequency, scheduling and whether a future completes are not shown.
 
 **Expanding calls.** By default `flow` shows one function body. With
 `--depth 1` (up to 6), it also opens the functions that body calls, when it can

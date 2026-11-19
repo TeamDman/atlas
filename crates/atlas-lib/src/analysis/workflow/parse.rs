@@ -18,6 +18,7 @@ pub(super) fn parse_many(source: &str, path: &str, selectors: &[&str]) -> Result
         source,
         path,
         selection: crate::population::SyntaxSelection::All,
+        unindexed_calls: false,
     };
     let mut functions = Vec::new();
     collect(&ast.items, &[], &reader, &mut functions);
@@ -47,6 +48,7 @@ pub(super) fn parse_ast(
         source,
         path,
         selection,
+        unindexed_calls: false,
     };
     let mut functions = Vec::new();
     collect(&ast.items, &[], &reader, &mut functions);
@@ -71,6 +73,7 @@ pub(super) fn default_bodies(
         source,
         path,
         selection,
+        unindexed_calls: false,
     };
     let mut functions = Vec::new();
     collect(&ast.items, &[], &reader, &mut functions);
@@ -85,6 +88,7 @@ pub(super) struct Reader<'a> {
     pub(super) source: &'a str,
     pub(super) path: &'a str,
     pub(super) selection: crate::population::SyntaxSelection<'a>,
+    unindexed_calls: bool,
 }
 impl Reader<'_> {
     pub(super) fn site(&self, span: Span) -> Site {
@@ -100,6 +104,13 @@ impl Reader<'_> {
         }
     }
     fn action(&self, expr: &Expr) -> Step {
+        if self.unindexed_calls && matches!(expr, Expr::Call(_) | Expr::MethodCall(_)) {
+            return Step::Opaque {
+                label: format!("{} (async-body call not indexed)", self.text(expr.span())),
+                fallible: false,
+                site: self.site(expr.span()),
+            };
+        }
         Step::Action {
             binding: None,
             label: self.text(expr.span()),
@@ -139,6 +150,7 @@ impl Reader<'_> {
                             | Step::Branch { label, .. }
                             | Step::Loop { label, .. }
                             | Step::Block { label, .. }
+                            | Step::AwaitBlock { label, .. }
                             | Step::Exit { label, .. }
                             | Step::Opaque { label, .. } => label,
                         };
@@ -500,9 +512,37 @@ impl Reader<'_> {
                 steps.push(self.action(expr));
                 steps
             }
-            // The operand runs, then the await; when and how often the
-            // future is polled is not shown.
-            Expr::Await(e) => self.with_operand(expr, &e.base),
+            // Only a directly awaited async block has a source-evidenced body
+            // to enter here. Construction is distinct from polling; its exits
+            // belong to the future, not to the enclosing function.
+            Expr::Await(e) => match direct_async(&e.base) {
+                Some(block) => vec![
+                    Step::Action {
+                        binding: None,
+                        label: "construct async block future".into(),
+                        fallible: false,
+                        site: self.site(block.span()),
+                    },
+                    Step::AwaitBlock {
+                        label: "poll directly awaited async block".into(),
+                        body: Reader {
+                            source: self.source,
+                            path: self.path,
+                            selection: self.selection,
+                            unindexed_calls: true,
+                        }
+                        .block(&block.block),
+                        site: self.site(block.span()),
+                    },
+                    Step::Action {
+                        binding: None,
+                        label: "await completed".into(),
+                        fallible: false,
+                        site,
+                    },
+                ],
+                None => self.with_operand(expr, &e.base),
+            },
             // The element is evaluated once; the length is a constant.
             Expr::Repeat(e) => self.with_operand(expr, &e.expr),
             Expr::Range(e) => {
@@ -537,6 +577,15 @@ fn expr_attrs(expr: &Expr) -> &[syn::Attribute] {
         Path, Range, RawAddr, Reference, Repeat, Return, Struct, Try, TryBlock, Tuple, Unary,
         Unsafe, While, Yield,
     )
+}
+
+fn direct_async(expr: &Expr) -> Option<&syn::ExprAsync> {
+    match expr {
+        Expr::Async(block) => Some(block),
+        Expr::Paren(inner) => direct_async(&inner.expr),
+        Expr::Group(inner) => direct_async(&inner.expr),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -744,6 +793,37 @@ mod tests {
         .unwrap();
         assert_eq!(flow.steps.len(), 2);
         assert!(flow.steps.iter().all(|s| matches!(s, Step::Opaque { .. })));
+    }
+    #[test]
+    fn only_directly_awaited_async_blocks_open() {
+        let flow = parse(
+            "async fn f(){ let later = async { hidden().await }; let x = (async { visible().await }).await; use_it(x); }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        assert!(matches!(&flow.steps[0], Step::Opaque { label, .. } if label.contains("hidden")));
+        let blocks: Vec<_> = flow
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::AwaitBlock { body, .. } => Some(body),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(blocks.len(), 1);
+        assert!(
+            blocks[0].iter().any(
+                |step| matches!(step, Step::Opaque { label, .. } if label.contains("visible()") && label.contains("not indexed"))
+            )
+        );
+        // Facts from deferred bodies are not promoted to enclosing call targets.
+        assert!(
+            !flow
+                .calls
+                .iter()
+                .any(|call| call.spelling == "hidden" || call.spelling == "visible")
+        );
     }
     #[test]
     fn ambiguous_function_names_refuse() {

@@ -98,6 +98,14 @@ pub enum Step {
         target: String,
         site: Site,
     },
+    /// The body of a syntactically direct `async { ... }.await`, entered only
+    /// when the constructed future is polled. Its returns and residuals leave
+    /// this future, not the containing function.
+    AwaitBlock {
+        label: String,
+        body: Vec<Self>,
+        site: Site,
+    },
     Exit {
         label: String,
         control: ExitKind,
@@ -149,6 +157,7 @@ impl Step {
             | Self::Match { site, .. }
             | Self::Loop { site, .. }
             | Self::Block { site, .. }
+            | Self::AwaitBlock { site, .. }
             | Self::Exit { site, .. }
             | Self::Opaque { site, .. } => site,
         }
@@ -307,6 +316,7 @@ fn write_steps(out: &mut String, steps: &[Step], depth: usize) {
             | Step::Match { label, .. }
             | Step::Loop { label, .. }
             | Step::Block { label, .. }
+            | Step::AwaitBlock { label, .. }
             | Step::Exit { label, .. } => (label.as_str(), ""),
             Step::Opaque {
                 label, fallible, ..
@@ -339,7 +349,7 @@ fn write_steps(out: &mut String, steps: &[Step], depth: usize) {
                 write_steps(out, body, depth + 1);
                 let _ = writeln!(out, "{pad}   repeat / exit loop");
             }
-            Step::Block { body, .. } => {
+            Step::Block { body, .. } | Step::AwaitBlock { body, .. } => {
                 write_steps(out, body, depth + 1);
                 let _ = writeln!(out, "{pad}   end of block");
             }
