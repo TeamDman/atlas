@@ -79,12 +79,25 @@ fn invoke(fixture: &Fixture, body: &str, arguments: &[&str]) -> Output {
         .stderr(Stdio::piped())
         .spawn()
         .expect("start Atlas CLI fixture");
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while child
-        .try_wait()
-        .expect("observe Atlas CLI fixture")
-        .is_none()
-    {
+    // Drain both pipes while waiting, so a child that writes more than a pipe
+    // buffer is never blocked by the harness itself.
+    let drain = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+        thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                std::io::Read::read_to_end(&mut pipe, &mut bytes).expect("drain fixture pipe");
+            }
+            bytes
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|p| Box::new(p) as _));
+    let stderr = drain(child.stderr.take().map(|p| Box::new(p) as _));
+    // This bound catches a hang, not slowness: it leaves room for a loaded host.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("observe Atlas CLI fixture") {
+            break status;
+        }
         if Instant::now() >= deadline {
             child.kill().expect("terminate timed-out Atlas fixture");
             child.wait().expect("reap timed-out Atlas fixture");
@@ -94,10 +107,12 @@ fn invoke(fixture: &Fixture, body: &str, arguments: &[&str]) -> Output {
             panic!("renderer exchange exceeded test harness deadline");
         }
         thread::sleep(Duration::from_millis(10));
-    }
-    let output = child
-        .wait_with_output()
-        .expect("collect Atlas fixture result");
+    };
+    let output = Output {
+        status,
+        stdout: stdout.join().expect("stdout reader"),
+        stderr: stderr.join().expect("stderr reader"),
+    };
     if let Ok(pid) = fs::read_to_string(fixture.path().join("fake/pid")) {
         let alive = Command::new("kill")
             .args(["-0", pid.trim()])

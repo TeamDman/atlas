@@ -61,15 +61,15 @@ pub trait Renderer {
 }
 
 pub(crate) fn visible(text: &str) -> String {
-    text.chars()
-        .flat_map(|c| {
-            if c.is_control() {
-                c.escape_default().collect::<Vec<_>>()
-            } else {
-                vec![c]
-            }
-        })
-        .collect()
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if c.is_control() {
+            out.extend(c.escape_default());
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Display aggregation changes layout only; exact evidence edges stay in Diagram.

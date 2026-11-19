@@ -25,17 +25,19 @@ impl Default for Pele {
     }
 }
 pub(crate) fn label(text: &str) -> String {
-    visible(text)
-        .chars()
-        .map(|c| match c {
-            '"' => "#quot;".into(),
-            '&' => "#38;".into(),
-            '|' => "#124;".into(),
-            '<' => "#60;".into(),
-            '>' => "#62;".into(),
-            _ => c.to_string(),
-        })
-        .collect()
+    let visible = visible(text);
+    let mut out = String::with_capacity(visible.len());
+    for c in visible.chars() {
+        match c {
+            '"' => out.push_str("#quot;"),
+            '&' => out.push_str("#38;"),
+            '|' => out.push_str("#124;"),
+            '<' => out.push_str("#60;"),
+            '>' => out.push_str("#62;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 /// Emit inspectable Mermaid with opaque IDs and escaped source-derived labels.
 pub fn mermaid(diagram: &Diagram) -> Result<String> {
