@@ -112,7 +112,7 @@ pub(super) fn build(
                 Target::InvalidFunction(position) => {
                     return Err(format!("invalid indexed function position {position}").into());
                 }
-                Target::Summarized(reason) => {
+                Target::Candidate(_, reason) | Target::Summarized(reason) => {
                     observations.push(Observation {
                         function: f.id.clone(),
                         call: Some(call.clone()),

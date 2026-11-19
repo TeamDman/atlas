@@ -230,6 +230,15 @@ resolve them, and shows where each call returns. Recursion, the depth limit and
 calls it cannot resolve are marked as boundaries. A diagram with more than 600
 steps is refused; choose a smaller function or depth.
 
+For a written struct literal or `self.field`, Atlas can use a unique written
+struct declaration and an inherent method. A uniquely evidenced in-scope trait
+method and concrete implementation may be shown as a **source candidate**;
+the edge is not proved Rust dispatch, since external or macro-generated
+candidates and compiler inference are not modeled. Ambiguous imports, trait
+implementations, conditional forms and unsupported generics remain boundaries.
+An expanded async body is a source view, not evidence that constructing a
+future ran its body. Await polling, scheduling and completion are not modeled.
+
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The
 hidden steps are still listed in the JSON evidence.

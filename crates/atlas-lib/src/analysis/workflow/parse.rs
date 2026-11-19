@@ -61,6 +61,26 @@ pub(super) fn parse_ast(
     }
 }
 
+pub(super) fn default_bodies(
+    source: &str,
+    path: &str,
+    ast: &syn::File,
+    selection: crate::population::SyntaxSelection<'_>,
+) -> Vec<Workflow> {
+    let reader = Reader {
+        source,
+        path,
+        selection,
+    };
+    let mut functions = Vec::new();
+    collect(&ast.items, &[], &reader, &mut functions);
+    functions
+        .iter()
+        .filter(|f| f.default_body)
+        .map(|f| reader.build(f))
+        .collect()
+}
+
 pub(super) struct Reader<'a> {
     pub(super) source: &'a str,
     pub(super) path: &'a str,

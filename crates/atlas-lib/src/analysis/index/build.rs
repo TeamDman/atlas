@@ -28,6 +28,12 @@ impl Index {
                 continue;
             };
             let parsed = sources[&file.path].workflow(&file.path, tests)?;
+            let defaults = crate::analysis::workflow::read_defaults(
+                sources[&file.path].source(),
+                &file.path,
+                sources[&file.path].ast(&file.path)?,
+                tests,
+            );
             for (scope, binary) in file_mounts {
                 let namespace = scope[0].split('#').next().unwrap_or(&scope[0]);
                 if !packages.contains(namespace) {
@@ -42,7 +48,12 @@ impl Index {
                         .collect();
                     self.exports.entry(key).or_default().extend(values);
                 }
-                for flow in &parsed.functions {
+                for (flow, default_body) in parsed
+                    .functions
+                    .iter()
+                    .map(|f| (f, false))
+                    .chain(defaults.iter().map(|f| (f, true)))
+                {
                     let id = format!(
                         "{}::{} [{}]",
                         scope.join("::"),
@@ -57,6 +68,8 @@ impl Index {
                     self.functions.push(Function {
                         id,
                         scope: function_scope,
+                        inherent: self.inherent_sites.contains(&flow.site),
+                        default_body,
                         flow: flow.clone(),
                     });
                 }
@@ -66,6 +79,9 @@ impl Index {
     }
     pub(super) fn name_functions(&mut self) {
         for (i, f) in self.functions.iter().enumerate() {
+            if f.default_body {
+                continue;
+            }
             if let Some(p) = path(&f.flow.function) {
                 let mut key = f.scope.clone();
                 key.extend(p.into_iter().skip(f.flow.module.len()));
@@ -76,6 +92,9 @@ impl Index {
     pub(super) fn bind_method_owners(&mut self) -> Result<()> {
         // Resolve an impl owner imported from another physical file only once.
         for (i, f) in self.functions.iter().enumerate() {
+            if f.default_body {
+                continue;
+            }
             if let Some(owner) = f.flow.owner.as_deref().and_then(ty)
                 && let Some(mut key) = self.canonical(i, &owner).and_then(|p| self.exported(&p))
             {

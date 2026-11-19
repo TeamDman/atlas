@@ -31,6 +31,265 @@ fn reachable(d: &Diagram, from: &str, to: &str) -> bool {
     }
     false
 }
+
+#[test]
+fn written_field_and_literal_receivers_expand_unique_inherent_methods() {
+    let (_, d) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod model; mod service; impl model::Owner { pub fn run(&self) { self.auth.resolve(); } }",
+            ),
+            (
+                "src/model.rs",
+                "use crate::service::Auth; pub struct Owner { pub auth: Auth }",
+            ),
+            (
+                "src/service.rs",
+                "pub struct Auth; impl Auth { pub fn resolve(&self) {} }",
+            ),
+        ],
+        "model::Owner::run",
+        1,
+    );
+    assert!(d.nodes.iter().any(|n| n.label == "fn Auth::resolve"));
+    let (_, d) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod model; pub use model::*; pub fn run(){ Request {}.execute(); }",
+            ),
+            (
+                "src/model.rs",
+                "pub struct Request {} impl Request { pub fn execute(&self) {} }",
+            ),
+        ],
+        "run",
+        1,
+    );
+    assert!(d.nodes.iter().any(|n| n.label == "fn Request::execute"));
+}
+
+#[test]
+fn receiver_lookup_refuses_ambiguous_globs_and_generic_field_types() {
+    let (_, d) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod a; mod b; pub use a::*; pub use b::*; pub fn run(){ Request {}.execute(); }",
+            ),
+            (
+                "src/a.rs",
+                "pub struct Request {} impl Request { pub fn execute(&self) {} }",
+            ),
+            (
+                "src/b.rs",
+                "pub struct Request {} impl Request { pub fn execute(&self) {} }",
+            ),
+        ],
+        "run",
+        1,
+    );
+    assert!(!d.nodes.iter().any(|n| n.label == "fn Request::execute"));
+    assert!(
+        d.nodes
+            .iter()
+            .any(|n| n.label.contains("struct declaration not unique"))
+    );
+    let (_, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "struct Owner<T>{ value:T } impl<T> Owner<T> { fn run(&self){ self.value.execute(); } }",
+        )],
+        "Owner<T>::run",
+        1,
+    );
+    assert!(!d.nodes.iter().any(|n| n.label == "fn T::execute"));
+}
+
+#[test]
+fn trait_defaults_and_overrides_are_explicit_source_candidates() {
+    let (_, d) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod api; mod types; use api::Execute; use types::Request; pub fn run(){ Request {}.execute(); }",
+            ),
+            (
+                "src/api.rs",
+                "pub trait Execute { fn execute(&self) { default_body(); } } fn default_body() {}",
+            ),
+            (
+                "src/types.rs",
+                "use crate::api::Execute; pub struct Request {} impl Execute for Request {}",
+            ),
+        ],
+        "run",
+        1,
+    );
+    assert!(d.nodes.iter().any(|n| n.label == "fn Execute::execute"));
+    assert!(
+        d.edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    assert!(d.edges.iter().any(|e| {
+        e.label
+            .as_deref()
+            .is_some_and(|label| label.starts_with("candidate return to"))
+    }));
+    assert!(
+        d.nodes
+            .iter()
+            .any(|n| n.label.contains("not proved dispatch"))
+    );
+
+    let (_, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "trait Execute { fn execute(&self) { default_body(); } } struct Request {} impl Execute for Request { fn execute(&self) { override_body(); } } fn default_body() {} fn override_body() {} pub fn run(){ Request {}.execute(); }",
+        )],
+        "run",
+        1,
+    );
+    assert!(d.nodes.iter().any(|n| n.label == "fn Request::execute"));
+    assert!(!d.nodes.iter().any(|n| n.label == "fn Execute::execute"));
+}
+
+#[test]
+fn trait_candidates_refuse_ambiguity_and_out_of_scope_traits() {
+    let (_, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "trait One { fn execute(&self) {} } trait Two { fn execute(&self) {} } struct Request {} impl One for Request {} impl Two for Request {} pub fn run(){ Request {}.execute(); }",
+        )],
+        "run",
+        1,
+    );
+    assert!(
+        !d.edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    assert!(
+        d.nodes
+            .iter()
+            .any(|n| n.label.contains("ambiguous in-scope trait candidates"))
+    );
+    let (_, d) = inspect(
+        &[
+            (
+                "src/lib.rs",
+                "mod api; mod types; use types::Request; pub fn run(){ Request {}.execute(); }",
+            ),
+            ("src/api.rs", "pub trait Execute { fn execute(&self) {} }"),
+            (
+                "src/types.rs",
+                "use crate::api::Execute; pub struct Request {} impl Execute for Request {}",
+            ),
+        ],
+        "run",
+        1,
+    );
+    assert!(!d.nodes.iter().any(|n| n.label == "fn Execute::execute"));
+}
+
+#[test]
+fn trait_candidates_do_not_override_inherent_or_generic_uncertainty() {
+    let (_, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "trait Execute { fn execute(&self); } struct Request {} impl Execute for Request { fn execute(&self) {} } impl Request { fn execute(&self) {} } pub fn run(){ Request {}.execute(); }",
+        )],
+        "run",
+        1,
+    );
+    assert!(
+        !d.edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    assert!(
+        d.nodes
+            .iter()
+            .any(|n| n.label.contains("competing inherent method observations"))
+    );
+    let (_, d) = inspect(
+        &[(
+            "src/lib.rs",
+            "trait Execute { fn execute(&self) {} } struct Request {} impl<T> Execute for T {} pub fn run(){ Request {}.execute(); }",
+        )],
+        "run",
+        1,
+    );
+    assert!(
+        !d.edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+    assert!(
+        d.nodes
+            .iter()
+            .any(|n| n.label.contains("generic trait implementation may apply"))
+    );
+}
+
+#[test]
+fn written_receivers_cross_package_exports_with_explicit_evidence() {
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        (
+            "app/src/lib.rs",
+            "use domain::{Auth, Execute, Request}; pub struct Owner { auth: Auth } impl Owner { pub fn run(&self) { self.auth.resolve(); Request {}.execute(); } }",
+        ),
+        (
+            "domain/src/lib.rs",
+            "mod api; mod types; pub use api::Execute; pub use types::*;",
+        ),
+        (
+            "domain/src/api.rs",
+            "pub trait Execute { fn execute(&self) {} }",
+        ),
+        (
+            "domain/src/types.rs",
+            "use crate::api::Execute; pub struct Auth; impl Auth { pub fn resolve(&self) {} } pub struct Request {} impl Execute for Request {}",
+        ),
+    ]);
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let graph = discovery::scan_metadata(&metadata).unwrap();
+    let (_, d) = workflow::expanded(
+        fixture.path(),
+        &metadata,
+        &graph,
+        "app/src/lib.rs",
+        "Owner::run",
+        1,
+    )
+    .unwrap();
+    d.validate().unwrap();
+    assert!(d.nodes.iter().any(|n| n.label == "fn Auth::resolve"));
+    assert!(d.nodes.iter().any(|n| n.label == "fn Execute::execute"));
+    assert!(
+        d.edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+}
 const CONTROL: &str = r#"
 use std::sync::atomic::{AtomicUsize,Ordering};
 static GUARDS:AtomicUsize=AtomicUsize::new(0);

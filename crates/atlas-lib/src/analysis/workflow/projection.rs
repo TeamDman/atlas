@@ -209,16 +209,32 @@ impl<'a> Builder<'a> {
         let index = self.index?;
         let f = self.function?;
         let target = self.targets.get(&(f, site.clone()))?.clone();
-        let (target, reason) = match target {
-            Target::Function(j) if self.stack.contains(&j) => (None, "recursion boundary".into()),
-            Target::Function(_) if self.depth == 0 => (None, "depth boundary".into()),
-            Target::Function(j) => (Some(j), String::new()),
-            Target::Summarized(s) => (None, s),
-            Target::Boundary(..) => (None, "declared boundary".into()),
+        let (target, reason, candidate) = match target {
+            Target::Function(j) if self.stack.contains(&j) => {
+                (None, "recursion boundary".into(), false)
+            }
+            Target::Function(_) if self.depth == 0 => (None, "depth boundary".into(), false),
+            Target::Function(j) => (Some(j), String::new(), false),
+            Target::Candidate(j, _) if self.stack.contains(&j) => {
+                (None, "candidate recursion boundary".into(), true)
+            }
+            Target::Candidate(_, reason) if self.depth == 0 => {
+                (None, format!("candidate depth boundary: {reason}"), true)
+            }
+            Target::Candidate(j, reason) => (Some(j), reason, true),
+            Target::Summarized(s) => (None, s, false),
+            Target::Boundary(..) => (None, "declared boundary".into(), false),
             Target::InvalidFunction(position) => {
-                (None, format!("invalid function position {position}"))
+                (None, format!("invalid function position {position}"), false)
             }
         };
+        if candidate && let Some(node) = self.nodes.iter_mut().find(|n| n.id == id) {
+            write!(
+                node.label,
+                "\n[source candidate, not proved dispatch: {reason}]"
+            )
+            .expect("formatting into a String cannot fail");
+        }
         let Some(j) = target else {
             if let Some(node) = self.nodes.iter_mut().find(|n| n.id == id) {
                 write!(
@@ -231,7 +247,8 @@ impl<'a> Builder<'a> {
         };
         let continuation = self.node(
             &format!(
-                "after {} @ {}:{} (if returned)",
+                "after {}{} @ {}:{} (if returned)",
+                if candidate { "source candidate " } else { "" },
                 index.functions()[j].flow.function,
                 site.line,
                 site.column
@@ -240,11 +257,24 @@ impl<'a> Builder<'a> {
         );
         let flow = index.functions()[j].flow.clone();
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
-        self.edge(id, &entry, Some("call"));
+        self.edge(
+            id,
+            &entry,
+            Some(if candidate {
+                "source candidate"
+            } else {
+                "call"
+            }),
+        );
         self.edge(
             &exit,
             &continuation,
-            Some(&format!("return to {}:{}", site.line, site.column)),
+            Some(&format!(
+                "{}return to {}:{}",
+                if candidate { "candidate " } else { "" },
+                site.line,
+                site.column
+            )),
         );
         Some(continuation)
     }

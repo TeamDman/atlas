@@ -3,6 +3,7 @@
 //! Resolution never chooses among ambiguous names; Analysis owns the syntax cache.
 mod build;
 mod mounts;
+mod receivers;
 mod resolve;
 
 use super::{
@@ -26,6 +27,8 @@ pub struct Function {
     pub id: String,
     pub scope: Vec<String>,
     pub flow: Workflow,
+    inherent: bool,
+    default_body: bool,
 }
 #[non_exhaustive]
 pub struct Boundary {
@@ -56,11 +59,17 @@ pub struct Index {
     names: BTreeMap<Vec<String>, Vec<usize>>,
     crates: BTreeSet<String>,
     exports: BTreeMap<Vec<String>, Vec<Vec<String>>>,
+    structs: BTreeMap<Vec<String>, Vec<receivers::StructShape>>,
+    inherent_sites: BTreeSet<super::workflow::Site>,
+    traits: BTreeMap<Vec<String>, Vec<receivers::TraitShape>>,
+    impls: Vec<receivers::TraitImpl>,
 }
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub enum Target {
     Function(usize),
+    /// A uniquely witnessed source candidate, not a proved Rust dispatch.
+    Candidate(usize, String),
     Boundary(usize, Option<String>),
     Summarized(String),
     /// The caller supplied a position outside this index, not an unresolved
@@ -138,7 +147,12 @@ impl Index {
             names: BTreeMap::new(),
             crates: mounts.crates.clone(),
             exports: BTreeMap::new(),
+            structs: BTreeMap::new(),
+            inherent_sites: BTreeSet::new(),
+            traits: BTreeMap::new(),
+            impls: Vec::new(),
         };
+        index.read_structs(sources, graph, &mounts, tests)?;
         index.read_functions(sources, graph, &mounts, tests)?;
         index.name_functions();
         index.bind_method_owners()?;

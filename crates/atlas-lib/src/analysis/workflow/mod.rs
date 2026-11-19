@@ -363,6 +363,20 @@ pub(crate) fn read_ast(
     )
 }
 
+pub(crate) fn read_defaults(
+    source: &crate::source::Source,
+    path: &str,
+    ast: &syn::File,
+    tests: crate::population::TestSelection,
+) -> Vec<Workflow> {
+    parse::default_bodies(
+        source.text(),
+        path,
+        ast,
+        crate::population::SyntaxSelection::Selected { source, tests },
+    )
+}
+
 /// Expand source-resolved calls to a bounded depth, preserving occurrence-specific returns.
 /// Recursion and unavailable bodies are explicit boundaries, not invented paths.
 pub fn expanded(

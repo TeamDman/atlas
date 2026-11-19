@@ -183,6 +183,48 @@ impl Index {
         receiver: &str,
         call: &Call,
     ) -> Target {
+        if let Ok(expr) = syn::parse_str::<syn::Expr>(receiver) {
+            match expr {
+                syn::Expr::Struct(s)
+                    if s.qself.is_none()
+                        && s.path
+                            .segments
+                            .iter()
+                            .all(|s| matches!(s.arguments, syn::PathArguments::None)) =>
+                {
+                    let parts: Vec<_> = s
+                        .path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.to_string())
+                        .collect();
+                    if parts
+                        .first()
+                        .is_some_and(|first| shadowed(&f.flow.local_names, first))
+                    {
+                        return Target::Summarized(format!(
+                            "receiver {receiver}: local type name may be shadowed"
+                        ));
+                    }
+                    if let Some(owner) = self.canonical(function, &parts) {
+                        return self.written_struct_method(function, &owner, call, receiver);
+                    }
+                }
+                syn::Expr::Field(field) if matches!(&*field.base, syn::Expr::Path(p) if p.path.is_ident("self")) => {
+                    if let syn::Member::Named(name) = field.member
+                        && let Some(owner) = self.canonical(function, &["Self".into()])
+                        && let Some([shape]) = self.structs.get(&owner).map(Vec::as_slice)
+                        && shape.supported
+                        && let Some(field_type) = shape.fields.get(&name.to_string())
+                        && let Some(field_owner) =
+                            self.in_scope(&shape.scope, &shape.imports, field_type)
+                    {
+                        return self.written_struct_method(function, &field_owner, call, receiver);
+                    }
+                }
+                _ => {}
+            }
+        }
         if receiver == "self" {
             return self
                 .canonical(function, &["Self".into(), call.spelling.clone()])
@@ -217,6 +259,203 @@ impl Index {
                 self.classify(&p)
             },
         )
+    }
+
+    fn written_struct_method(
+        &self,
+        function: usize,
+        owner: &[String],
+        call: &Call,
+        receiver: &str,
+    ) -> Target {
+        let Some(owner) = self.struct_path(owner) else {
+            return Target::Summarized(format!(
+                "receiver {receiver}: struct declaration not unique"
+            ));
+        };
+        let Some([shape]) = self.structs.get(&owner).map(Vec::as_slice) else {
+            return Target::Summarized(format!(
+                "receiver {receiver}: struct declaration not unique"
+            ));
+        };
+        if !shape.supported {
+            return Target::Summarized(format!(
+                "receiver {receiver}: generic or conditional struct"
+            ));
+        }
+        let mut name = owner.clone();
+        name.push(call.spelling.clone());
+        match self.classify(&name) {
+            Target::Function(index) if self.functions[index].inherent => Target::Function(index),
+            boundary @ Target::Boundary(..) => boundary,
+            _ if self.names.get(&name).is_some_and(|candidates| {
+                candidates.iter().any(|i| self.functions[*i].inherent)
+            }) =>
+            {
+                Target::Summarized(format!(
+                    "receiver {receiver}: competing inherent method observations"
+                ))
+            }
+            _ => self.trait_method_candidate(function, &owner, call, receiver),
+        }
+    }
+
+    fn trait_method_candidate(
+        &self,
+        function: usize,
+        owner: &[String],
+        call: &Call,
+        receiver: &str,
+    ) -> Target {
+        let f = &self.functions[function];
+        if f.flow.imports.contains_key("*")
+            || f.flow.local_names.iter().any(|n| n == "*")
+            || f.flow.imports.values().any(|paths| paths.len() != 1)
+        {
+            return Target::Summarized(format!(
+                "receiver {receiver}: glob import leaves trait scope unknown"
+            ));
+        }
+        let mut visible = BTreeSet::new();
+        for name in f.flow.imports.keys() {
+            if shadowed(&f.flow.local_names, name) {
+                continue;
+            }
+            if let Some(path) = self.canonical(function, std::slice::from_ref(name))
+                && self.traits.contains_key(&path)
+            {
+                visible.insert(path);
+            }
+        }
+        for path in self.traits.keys() {
+            if path.len() == f.scope.len() + 1
+                && path.starts_with(&f.scope)
+                && !shadowed(&f.flow.local_names, &path[path.len() - 1])
+            {
+                visible.insert(path.clone());
+            }
+        }
+        let mut candidates = Vec::new();
+        for trait_path in visible {
+            let Some(shapes) = self.traits.get(&trait_path) else {
+                continue;
+            };
+            let [shape] = shapes.as_slice() else {
+                return Target::Summarized("ambiguous trait declaration".into());
+            };
+            let Some(methods) = shape.methods.get(&call.spelling) else {
+                continue;
+            };
+            let [default] = methods.as_slice() else {
+                return Target::Summarized("ambiguous trait method".into());
+            };
+            if !shape.supported {
+                return Target::Summarized("conditional or generic trait method".into());
+            }
+            for implementation in &self.impls {
+                if self
+                    .in_scope(
+                        &implementation.scope,
+                        &implementation.imports,
+                        &implementation.trait_path,
+                    )
+                    .as_deref()
+                    != Some(&trait_path)
+                {
+                    continue;
+                }
+                if implementation.generic_owner {
+                    return Target::Summarized("generic trait implementation may apply".into());
+                }
+                let Some(impl_owner) = self
+                    .in_scope(
+                        &implementation.scope,
+                        &implementation.imports,
+                        &implementation.owner,
+                    )
+                    .and_then(|p| self.struct_path(&p))
+                else {
+                    continue;
+                };
+                if impl_owner != owner {
+                    continue;
+                }
+                if !implementation.supported {
+                    return Target::Summarized(
+                        "conditional or generic trait implementation".into(),
+                    );
+                }
+                let selected = if let Some(overrides) = implementation.methods.get(&call.spelling) {
+                    let [site] = overrides.as_slice() else {
+                        return Target::Summarized("ambiguous trait override".into());
+                    };
+                    Some((site, false))
+                } else {
+                    default.as_ref().map(|site| (site, true))
+                };
+                if let Some((site, is_default)) = selected {
+                    let matches: Vec<_> = self
+                        .functions
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, body)| {
+                            &body.flow.site == site && body.default_body == is_default
+                        })
+                        .map(|(index, _)| index)
+                        .collect();
+                    let [index] = matches.as_slice() else {
+                        return Target::Summarized(
+                            "trait body has ambiguous source contexts".into(),
+                        );
+                    };
+                    candidates.push((*index, format!("{} via impl at {}; other external or macro-generated candidates are not ruled out", trait_path.join("::"), implementation.site.link())));
+                }
+            }
+        }
+        match candidates.as_slice() {
+            [(index, reason)] => Target::Candidate(*index, reason.clone()),
+            [] => Target::Summarized(format!(
+                "receiver {receiver}: no unique supported in-scope trait method"
+            )),
+            _ => Target::Summarized(format!(
+                "receiver {receiver}: ambiguous in-scope trait candidates"
+            )),
+        }
+    }
+
+    fn struct_path(&self, path: &[String]) -> Option<Vec<String>> {
+        if let Some(shapes) = self.structs.get(path) {
+            let [shape] = shapes.as_slice() else {
+                return None;
+            };
+            return shape.supported.then(|| path.to_vec());
+        }
+        let (name, parent) = path.split_last()?;
+        let mut star = parent.to_vec();
+        star.push("*".into());
+        let globs = self.exports.get(&star)?;
+        let mut found = BTreeSet::new();
+        for module in globs {
+            let module = self.exported(module)?;
+            if !self.scopes.values().flatten().any(|scope| scope == &module) {
+                return None;
+            }
+            let mut candidate = module;
+            candidate.push(name.clone());
+            if let Some(shapes) = self.structs.get(&candidate) {
+                let [shape] = shapes.as_slice() else {
+                    return None;
+                };
+                if shape.public && shape.supported {
+                    found.insert(candidate);
+                }
+            }
+        }
+        if found.len() == 1 {
+            found.pop_first()
+        } else {
+            None
+        }
     }
 
     /// Prefer the written type; otherwise inspect a unique initializer's return type.

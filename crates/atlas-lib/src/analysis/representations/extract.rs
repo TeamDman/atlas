@@ -426,7 +426,7 @@ pub(in crate::analysis) fn from_selected_sources(
                 Target::InvalidFunction(position) => {
                     return Err(format!("invalid indexed function position {position}").into());
                 }
-                Target::Summarized(reason) => {
+                Target::Candidate(_, reason) | Target::Summarized(reason) => {
                     unknowns.insert(reason);
                 }
                 Target::Boundary(..) => {
