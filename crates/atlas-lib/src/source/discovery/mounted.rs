@@ -48,6 +48,7 @@ pub(super) fn outside_mounts(
     src_rel: &str,
     files: &[Loaded],
     sources: &mut BTreeMap<String, Arc<Captured>>,
+    visit: &mut crate::source::Visitor<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<MountedSources> {
     let inside = format!("{src_rel}/");
@@ -80,7 +81,7 @@ pub(super) fn outside_mounts(
         if !ancestry.insert(rel.clone()) {
             continue;
         }
-        let Some(source) = capture_optional(root, &rel, sources, diagnostics)? else {
+        let Some(source) = capture_optional(root, &rel, sources, visit, diagnostics)? else {
             unavailable.push(UnavailableMount {
                 declaring_file,
                 module,
@@ -104,7 +105,7 @@ pub(super) fn outside_mounts(
             );
             let mut found = false;
             for child in &children {
-                if capture_optional(root, child, sources, diagnostics)?.is_some() {
+                if capture_optional(root, child, sources, visit, diagnostics)?.is_some() {
                     found = true;
                     pending.push((
                         child.clone(),
@@ -142,6 +143,7 @@ fn capture_optional(
     root: &Path,
     rel: &str,
     sources: &mut BTreeMap<String, Arc<Captured>>,
+    visit: &mut crate::source::Visitor<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Result<Option<Arc<Captured>>> {
     if let Some(source) = sources.get(rel) {
@@ -159,7 +161,7 @@ fn capture_optional(
     }
     match fs::read_to_string(&path) {
         Ok(text) => {
-            let source = Arc::new(Captured::of(Path::new(rel), text));
+            let source = Arc::new(Captured::of_with(Path::new(rel), text, visit));
             sources.insert(rel.to_owned(), Arc::clone(&source));
             Ok(Some(source))
         }

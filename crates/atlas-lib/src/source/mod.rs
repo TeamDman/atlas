@@ -200,11 +200,20 @@ pub(crate) enum Captured {
     Parsed(Arc<Source>),
     Invalid { text: String, error: SyntaxError },
 }
+/// Reads more from a file's syntax tree during capture, before the tree is
+/// dropped: `(relative path, captured source, tree)`.
+pub(crate) type Visitor<'v> = dyn FnMut(&str, &Arc<Source>, &syn::File) + 'v;
 impl Captured {
-    pub fn of(path: &Path, text: String) -> Self {
+    /// Capture, letting `visit` read the tree once the source is built. A
+    /// file that does not parse is not visited.
+    pub fn of_with(path: &Path, text: String, visit: &mut Visitor<'_>) -> Self {
         let projection = RustSourceProjection::of(text);
-        match syntax::read(path, &projection) {
-            Ok(facts) => Self::Parsed(Arc::new(Source::from_facts(projection, facts))),
+        match syntax::read_tree(path, &projection) {
+            Ok((facts, ast)) => {
+                let source = Arc::new(Source::from_facts(projection, facts));
+                visit(&path.to_string_lossy(), &source, &ast);
+                Self::Parsed(source)
+            }
             Err(error) => Self::Invalid {
                 text: projection.text().to_owned(),
                 error,

@@ -31,7 +31,7 @@ pub fn scan_workspace(root: &Path) -> Result<SourceGraph> {
 
 /// Scan the population from an already resolved Cargo workspace.
 pub fn scan_metadata(metadata: &Metadata) -> Result<SourceGraph> {
-    read_metadata(metadata, &mut BTreeMap::new()).map(|(graph, _, _)| graph)
+    read_metadata(metadata, &mut BTreeMap::new(), &mut |_, _, _| {}).map(|(graph, _, _)| graph)
 }
 
 /// Source bytes and their derived lexical graph from one discovery pass.
@@ -144,8 +144,15 @@ pub fn snapshot_workspace(root: &Path) -> Result<Snapshot> {
     capture_metadata(metadata)
 }
 fn capture_metadata(metadata: Metadata) -> Result<Snapshot> {
+    capture_metadata_with(metadata, &mut |_, _, _| {})
+}
+/// Capture, letting `visit` read each parsed file's tree before it is dropped.
+pub(crate) fn capture_metadata_with(
+    metadata: Metadata,
+    visit: &mut crate::source::Visitor<'_>,
+) -> Result<Snapshot> {
     let mut sources = BTreeMap::new();
-    let (graph, mounted, source_diagnostics) = read_metadata(&metadata, &mut sources)?;
+    let (graph, mounted, source_diagnostics) = read_metadata(&metadata, &mut sources, visit)?;
     Ok(Snapshot {
         graph,
         sources,
@@ -158,6 +165,7 @@ fn capture_metadata(metadata: Metadata) -> Result<Snapshot> {
 fn read_metadata(
     metadata: &Metadata,
     captured: &mut BTreeMap<String, Arc<crate::source::Captured>>,
+    visit: &mut crate::source::Visitor<'_>,
 ) -> Result<(
     SourceGraph,
     BTreeMap<String, MountedSources>,
@@ -256,9 +264,10 @@ fn read_metadata(
             let source = if let Some(source) = captured.get(&rel) {
                 Arc::clone(source)
             } else {
-                let source = Arc::new(crate::source::Captured::of(
+                let source = Arc::new(crate::source::Captured::of_with(
                     Path::new(&rel),
                     fs::read_to_string(&path)?,
+                    visit,
                 ));
                 captured.insert(rel.clone(), Arc::clone(&source));
                 source
@@ -274,6 +283,7 @@ fn read_metadata(
             &rel_display(&root, &src),
             &loaded,
             captured,
+            visit,
             &mut diagnostics,
         )?;
         let mut known: BTreeSet<_> = loaded.iter().map(|file| file.rel.clone()).collect();
@@ -864,5 +874,40 @@ mod identity_tests {
             rel_display(root, &normalize_path(target)),
             "scripts/population.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod visit_tests {
+    #[test]
+    fn the_capture_visitor_sees_each_parsed_file_once_on_capture_s_own_parse() {
+        let fixture = crate::test_support::Fixture::new(&[]);
+        let root = fixture.path();
+        std::fs::create_dir_all(root.join("src")).expect("fixture src");
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname=\"visit-fixture\"\nversion=\"0.0.0\"\nedition=\"2024\"\n",
+        )
+        .expect("fixture manifest");
+        std::fs::write(root.join("src/lib.rs"), "mod a;\npub struct Root;\n").expect("lib");
+        std::fs::write(root.join("src/a.rs"), "pub fn a() {}\n").expect("a");
+        std::fs::write(root.join("src/broken.rs"), "pub fn {\n").expect("broken");
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(root)
+            .no_deps()
+            .exec()
+            .expect("metadata");
+        let before = crate::source::parse_count();
+        let mut seen = Vec::new();
+        let snapshot = super::capture_metadata_with(metadata, &mut |path, source, ast| {
+            seen.push((path.to_owned(), ast.items.len(), source.text().len()));
+        })
+        .expect("capture");
+        seen.sort();
+        let names: Vec<_> = seen.iter().map(|(path, ..)| path.as_str()).collect();
+        // The broken file is captured but not visited.
+        assert_eq!(names, ["src/a.rs", "src/lib.rs"]);
+        assert_eq!(snapshot.graph().files.len(), 3);
+        assert_eq!(crate::source::parse_count() - before, 3);
     }
 }
