@@ -335,7 +335,34 @@ impl Reader<'_> {
                         | syn::BinOp::ShlAssign(_)
                         | syn::BinOp::ShrAssign(_)
                 ) {
-                    return vec![self.opaque(expr)];
+                    // Built-in operators evaluate the right operand first,
+                    // overloaded ones the left; the type is not inferred, so
+                    // when both sides have steps, both orders are shown.
+                    let (left, right) = (self.operand(&e.left), self.operand(&e.right));
+                    let mut steps = if left.is_empty() || right.is_empty() {
+                        [right, left].concat()
+                    } else {
+                        vec![Step::Branch {
+                            label: format!(
+                                "operand order of {} (depends on the operand types)",
+                                self.text(expr.span())
+                            ),
+                            arms: vec![
+                                Arm {
+                                    label: "built-in operator: right operand first".into(),
+                                    steps: [right.clone(), left.clone()].concat(),
+                                },
+                                Arm {
+                                    label: "overloaded operator: left operand first".into(),
+                                    steps: [left, right].concat(),
+                                },
+                            ],
+                            site: site.clone(),
+                        }]
+                    };
+                    // The operator's own effect is not inferred.
+                    steps.push(self.opaque(expr));
+                    return steps;
                 }
                 let mut steps = self.operand(&e.left);
                 steps.extend(self.operand(&e.right));
@@ -421,6 +448,32 @@ mod tests {
                 other => format!("{other:?}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn compound_assignment_shows_its_operands_and_leaves_their_order_open() {
+        let flow = parse("fn f() { total += next()?; }", "lib.rs", "f").unwrap();
+        assert_eq!(
+            labels(&flow.steps),
+            ["next()", "propagate ?", "[opaque] total += next()?"]
+        );
+        let flow = parse("fn f() { slot()[i()] *= next()?; }", "lib.rs", "f").unwrap();
+        let Step::Branch { label, arms, .. } = &flow.steps[0] else {
+            panic!("{:?}", flow.steps)
+        };
+        assert!(label.contains("depends on the operand types"), "{label}");
+        assert_eq!(
+            labels(&arms[0].steps),
+            ["next()", "propagate ?", "slot()", "i()", "slot()[i()]"]
+        );
+        assert_eq!(
+            labels(&arms[1].steps),
+            ["slot()", "i()", "slot()[i()]", "next()", "propagate ?"]
+        );
+        assert_eq!(
+            labels(&flow.steps[1..]),
+            ["[opaque] slot()[i()] *= next()?"]
+        );
     }
 
     #[test]
