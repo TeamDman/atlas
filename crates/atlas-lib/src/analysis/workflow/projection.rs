@@ -89,8 +89,9 @@ struct Builder<'a> {
     deferred_calls: Option<Vec<super::Call>>,
     future_profile: Option<&'a super::future_profile::FutureProfile>,
     future_values: std::collections::BTreeMap<String, super::future_custody::FutureValue>,
+    guarded_factories: Vec<super::GuardedFactory>,
 }
-struct CallbackBinding {
+pub(super) struct CallbackBinding {
     closure: super::AsyncClosure,
     origin: usize,
     captured: std::collections::BTreeMap<String, Rc<Self>>,
@@ -127,6 +128,7 @@ impl<'a> Builder<'a> {
             deferred_calls: None,
             future_profile: None,
             future_values: std::collections::BTreeMap::new(),
+            guarded_factories: Vec::new(),
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -278,6 +280,62 @@ impl<'a> Builder<'a> {
             .find(|call| &call.site == site)
             .cloned();
         let source_call = source_call.as_ref();
+        if let Some(profile) = self.future_profile
+            && let Some(factory) = self
+                .guarded_factories
+                .iter()
+                .find(|factory| factory.await_site == *site)
+                .cloned()
+        {
+            let expected = factory.cases.len();
+            let cases: Vec<_> = factory.cases.into_iter().filter(|case| {
+                profile.operation(&case.call_site, &case.spelling).is_some_and(|contract| matches!(contract.operation, super::future_profile::Operation::GuardedFactory { argument: 0, arity } if arity == case.closure.parameters.len()))
+            }).collect();
+            if cases.len() == expected && expected > 0 {
+                let end = self.node("guarded factory future completes (value or residual)", site);
+                let unpolled = self.node("scope future not polled or interrupted [opaque]", site);
+                self.edge(id, &unpolled, Some("if not polled or interrupted"));
+                for case in cases {
+                    let admitted = self.node(
+                        "scope factory admitted and invoked [declared profile]",
+                        &case.call_site,
+                    );
+                    self.edge(
+                        id,
+                        &admitted,
+                        Some(&format!("{}; if polled and admitted", case.condition)),
+                    );
+                    let rejected = self.node("scope not admitted [opaque]", &case.call_site);
+                    self.edge(
+                        id,
+                        &rejected,
+                        Some(&format!(
+                            "{}; if polled and admission rejected",
+                            case.condition
+                        )),
+                    );
+                    let poll = self.node(
+                        "poll admitted factory future [declared profile]",
+                        &case.closure.site,
+                    );
+                    self.edge(&admitted, &poll, Some("if not cancelled and polled"));
+                    let cancelled = self.node(
+                        "cancelled before factory future poll [opaque]",
+                        &case.call_site,
+                    );
+                    self.edge(&admitted, &cancelled, Some("if cancelled before poll"));
+                    let old_exit = std::mem::replace(&mut self.exit, end.clone());
+                    let old_loops = std::mem::take(&mut self.loops);
+                    let old_calls = self.deferred_calls.replace(case.closure.awaited_callbacks);
+                    let ends = self.steps(&case.closure.body, vec![poll]);
+                    self.connect(ends, &end);
+                    self.deferred_calls = old_calls;
+                    self.loops = old_loops;
+                    self.exit = old_exit;
+                }
+                return Some(end);
+            }
+        }
         if let Some(call) = source_call
             && let Some(name) = call.awaited_value.as_deref()
             && let Some(binding) = self.callbacks.get(name).cloned()
@@ -361,8 +419,13 @@ impl<'a> Builder<'a> {
             let old_group = std::mem::replace(&mut self.group, value.future.future.path.clone());
             let old_function = self.function.replace(value.origin);
             let old_calls = self.deferred_calls.replace(Vec::new());
+            let old_factories =
+                std::mem::replace(&mut self.guarded_factories, value.future.guarded_factories);
+            let old_callbacks = std::mem::replace(&mut self.callbacks, value.callbacks);
             let ends = self.steps(&value.future.body, vec![poll]);
             self.connect(ends, &end);
+            self.callbacks = old_callbacks;
+            self.guarded_factories = old_factories;
             self.deferred_calls = old_calls;
             self.function = old_function;
             self.group = old_group;
@@ -432,8 +495,7 @@ impl<'a> Builder<'a> {
             }
         }
         let async_target = index.functions()[j].flow.async_function;
-        let async_callback_target =
-            async_target && !index.functions()[j].flow.callback_parameters.is_empty();
+        let callback_target = !index.functions()[j].flow.callback_parameters.is_empty();
         if async_target
             && !source_call.is_some_and(|call| call.directly_awaited || call.awaited_block_call)
         {
@@ -455,7 +517,7 @@ impl<'a> Builder<'a> {
             site,
         );
         let flow = index.functions()[j].flow.clone();
-        let forwarded = self.future_profile.zip(source_call).map_or_else(
+        let mut forwarded = self.future_profile.zip(source_call).map_or_else(
             std::collections::BTreeMap::new,
             |(profile, call)| {
                 super::future_custody::arguments(
@@ -468,10 +530,13 @@ impl<'a> Builder<'a> {
                 )
             },
         );
+        for future in forwarded.values_mut().filter(|future| future.origin == f) {
+            future.callbacks.clone_from(&self.callbacks);
+        }
         let old_future_values = std::mem::replace(&mut self.future_values, forwarded);
         let previous = self.substitution.clone();
         let old_callbacks = std::mem::take(&mut self.callbacks);
-        if async_callback_target
+        if callback_target
             && index.callback_bound_unshadowed(j)
             && let Some(call) = source_call
         {

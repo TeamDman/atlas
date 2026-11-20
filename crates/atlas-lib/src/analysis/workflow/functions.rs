@@ -268,7 +268,7 @@ impl Reader<'_> {
             generic_bounds: function.bounds.clone(),
             returned_pinned_self_call: self.returned_pinned_self_call(function.body),
             callback_parameters: super::facts::callback_parameters(function.signature),
-            deferred_locals: self.deferred_locals(function.body),
+            deferred_locals: self.deferred_locals(function.body, function.signature),
             local_values: self.local_values(function.body),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),

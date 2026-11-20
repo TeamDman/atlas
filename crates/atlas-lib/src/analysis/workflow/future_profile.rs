@@ -49,6 +49,9 @@ pub enum Operation {
     /// The synchronous call may poll this argument and returns normally only
     /// after that future completes. Early failure and no poll remain possible.
     PollArgument { argument: usize },
+    /// Polling may first admit and invoke the factory argument; only after a
+    /// second cancellation check may its returned future be polled.
+    GuardedFactory { argument: usize, arity: usize },
 }
 impl FutureProfile {
     pub(super) fn operation(&self, site: &Site, spelling: &str) -> Option<&Contract> {

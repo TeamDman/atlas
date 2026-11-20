@@ -287,7 +287,14 @@ definition file used by a resolution must be pinned. A resolution records
 (`path:line:column`). A contract records that definition, a nonempty `evidence`
 description, and an `operation`: `{"kind":"receiver-forward"}`,
 `{"kind":"argument-forward","argument":0}`, or
-`{"kind":"poll-argument","argument":0}`. Argument indices exclude the
+`{"kind":"poll-argument","argument":0}`. A
+`{"kind":"guarded-factory","argument":0,"arity":1}` contract says
+polling can admit and invoke the factory, then can poll its returned future
+only after a cancellation check. Atlas recognizes a narrow source form: a
+local async closure, a two-arm conditional selecting two such factory calls,
+and an immediately following tail await. Both branches need matching contracts;
+admission rejection, cancellation before poll, and no poll stay explicit
+opaque alternatives. Argument indices exclude the
 method receiver. Build these observations from independently reviewed source
 or compiler output; a hash binds the supplied assertion to bytes, not to its
 correctness. Call and definition columns must have ASCII prefixes so the

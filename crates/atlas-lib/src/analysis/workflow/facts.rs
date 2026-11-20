@@ -189,6 +189,25 @@ fn async_closures(
         })
         .collect()
 }
+pub(super) fn local_async_closure(
+    reader: &Reader<'_>,
+    expression: &Expr,
+    callback_names: &BTreeSet<String>,
+) -> Option<AsyncClosure> {
+    let arguments = std::iter::once(expression.clone()).collect();
+    async_closures(reader, &arguments, callback_names)
+        .into_iter()
+        .next()
+}
+pub(super) fn unshadowed_callbacks(signature: &Signature, block: &syn::Block) -> BTreeSet<String> {
+    let mut shadows = ShadowedNames::default();
+    shadows.visit_block(block);
+    callback_parameters(signature)
+        .into_iter()
+        .map(|parameter| parameter.name)
+        .filter(|name| !shadows.0.contains(name))
+        .collect()
+}
 pub(super) fn body(
     reader: &Reader<'_>,
     signature: &Signature,

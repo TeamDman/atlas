@@ -127,7 +127,11 @@ impl Reader<'_> {
     }
     /// Retain written async expressions without claiming their enclosing
     /// initializer returns, forwards, or polls them.
-    pub(super) fn deferred_locals(&self, block: &syn::Block) -> Vec<super::DeferredLocal> {
+    pub(super) fn deferred_locals(
+        &self,
+        block: &syn::Block,
+        signature: &syn::Signature,
+    ) -> Vec<super::DeferredLocal> {
         fn nested<'a>(
             reader: &Reader<'_>,
             expr: &'a Expr,
@@ -175,8 +179,126 @@ impl Reader<'_> {
                     future: self.site(future.span()),
                     wrappers,
                     body: self.deferred_block(&future.block),
+                    guarded_factories: self.guarded_factories(&future.block, signature),
                 });
             }
+        }
+        out
+    }
+    fn guarded_factories(
+        &self,
+        block: &syn::Block,
+        signature: &syn::Signature,
+    ) -> Vec<super::GuardedFactory> {
+        let callback_names = super::facts::unshadowed_callbacks(signature, block);
+        let mut out = Vec::new();
+        for (index, stmts) in block.stmts.windows(3).enumerate() {
+            if index + 3 != block.stmts.len() {
+                continue;
+            }
+            let [
+                Stmt::Local(factory),
+                Stmt::Local(binding),
+                Stmt::Expr(Expr::Await(awaited), None),
+            ] = stmts
+            else {
+                continue;
+            };
+            if !factory.attrs.is_empty() || !binding.attrs.is_empty() {
+                continue;
+            }
+            let (syn::Pat::Ident(factory_name), syn::Pat::Ident(binding_name)) =
+                (&factory.pat, &binding.pat)
+            else {
+                continue;
+            };
+            if !factory_name.attrs.is_empty()
+                || !binding_name.attrs.is_empty()
+                || factory_name.by_ref.is_some()
+                || binding_name.by_ref.is_some()
+                || factory_name.mutability.is_some()
+                || binding_name.mutability.is_some()
+                || factory_name.subpat.is_some()
+                || binding_name.subpat.is_some()
+                || !awaited.attrs.is_empty()
+            {
+                continue;
+            }
+            if !matches!(&*awaited.base, Expr::Path(p) if p.qself.is_none() && p.path.is_ident(&binding_name.ident))
+            {
+                continue;
+            }
+            let (Some(factory_init), Some(binding_init)) = (&factory.init, &binding.init) else {
+                continue;
+            };
+            if factory_init.diverge.is_some() || binding_init.diverge.is_some() {
+                continue;
+            }
+            let Some(closure) =
+                super::facts::local_async_closure(self, &factory_init.expr, &callback_names)
+            else {
+                continue;
+            };
+            let Expr::If(branch) = &*binding_init.expr else {
+                continue;
+            };
+            let simple_condition = match &*branch.cond {
+                Expr::Path(path) => {
+                    path.attrs.is_empty() && path.qself.is_none() && path.path.get_ident().is_some()
+                }
+                Expr::Field(field) => {
+                    field.attrs.is_empty()
+                        && matches!(&*field.base, Expr::Path(path) if path.attrs.is_empty() && path.qself.is_none() && path.path.get_ident().is_some())
+                }
+                _ => false,
+            };
+            if !branch.attrs.is_empty() || !simple_condition {
+                continue;
+            }
+            let Some((_, alternative)) = &branch.else_branch else {
+                continue;
+            };
+            let Expr::Block(alternative) = &**alternative else {
+                continue;
+            };
+            if !alternative.attrs.is_empty() {
+                continue;
+            }
+            let [Stmt::Expr(Expr::MethodCall(yes), None)] = branch.then_branch.stmts.as_slice()
+            else {
+                continue;
+            };
+            let [Stmt::Expr(Expr::MethodCall(no), None)] = alternative.block.stmts.as_slice()
+            else {
+                continue;
+            };
+            let valid = |call: &syn::ExprMethodCall| {
+                call.attrs.is_empty()
+                    && matches!(&*call.receiver, Expr::Path(p) if p.qself.is_none() && p.path.get_ident().is_some())
+                    && call.args.len() == 1
+                    && matches!(call.args.first(), Some(Expr::Path(p)) if p.qself.is_none() && p.path.is_ident(&factory_name.ident))
+            };
+            if !valid(yes) || !valid(no) {
+                continue;
+            }
+            let condition = self.text(branch.cond.span());
+            out.push(super::GuardedFactory {
+                await_site: self.site(awaited.span()),
+                cases: vec![
+                    super::GuardedFactoryCase {
+                        condition: format!("if {condition}"),
+                        spelling: yes.method.to_string(),
+                        call_site: self.site(yes.span()),
+                        closure: closure.clone(),
+                    },
+                    super::GuardedFactoryCase {
+                        condition: format!("if not {condition}"),
+                        spelling: no.method.to_string(),
+                        call_site: self.site(no.span()),
+                        closure,
+                    },
+                ],
+            });
         }
         out
     }

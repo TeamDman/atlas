@@ -5,6 +5,156 @@ use std::collections::BTreeSet;
 use support::Fixture;
 
 #[test]
+fn profiled_factory_requires_admission_and_a_later_future_poll() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = "use std::{future::Future,pin::Pin,task::{Context,Waker}}; fn wrap<T>(v:T)->T{v} fn drive<F:Future>(f:F){let mut f=Box::pin(f);let mut cx=Context::from_waker(Waker::noop());let _=f.as_mut().poll(&mut cx);} fn reject()->bool{false} fn cancelled()->bool{false} struct Scope; impl Scope { fn first<G,T>(&self,g:G)->Pin<Box<dyn Future<Output=()>>> where G:FnOnce(())->T+'static,T:Future<Output=()>+'static{Box::pin(async move{if reject(){return;}let f=g(());if cancelled(){return;}f.await})} fn second<G,T>(&self,g:G)->Pin<Box<dyn Future<Output=()>>> where G:FnOnce(())->T+'static,T:Future<Output=()>+'static{self.first(g)} } fn bridge<F:Future>(f:F){let f=wrap(f);drive(wrap(f));} fn run<F,T>(invoke:F) where F:FnOnce()->T+'static,T:Future<Output=()>+'static{let scope=Scope;let flag=false;let invocation=wrap(async move{let run_handler=|arg:()|async move{let _=arg;invoke().await};let handler=if flag{scope.first(run_handler)}else{scope.second(run_handler)};handler.await});bridge(invocation);} fn marker(){} pub fn entry(){run(||async{marker();});}";
+    let make = |text: &str, missing: bool| {
+        let fixture = Fixture::new(&[("src/lib.rs", text)]);
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+        let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+        let mut resolutions = Vec::new();
+        for spelling in ["wrap", "drive", "first", "second"] {
+            for (column, _) in text.match_indices(&format!("{spelling}(")) {
+                resolutions.push(Resolution {
+                    path: "src/lib.rs".into(),
+                    line: 1,
+                    column,
+                    spelling: spelling.into(),
+                    definition: format!("fixture::{spelling}"),
+                });
+            }
+        }
+        let mut contracts = vec![
+            Contract {
+                definition: "fixture::wrap".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "identity".into(),
+            },
+            Contract {
+                definition: "fixture::drive".into(),
+                operation: Operation::PollArgument { argument: 0 },
+                evidence: "poll".into(),
+            },
+            Contract {
+                definition: "fixture::first".into(),
+                operation: Operation::GuardedFactory {
+                    argument: 0,
+                    arity: 1,
+                },
+                evidence: "admission and poll".into(),
+            },
+            Contract {
+                definition: "fixture::second".into(),
+                operation: Operation::GuardedFactory {
+                    argument: 0,
+                    arity: 1,
+                },
+                evidence: "admission and poll".into(),
+            },
+        ];
+        if missing {
+            contracts.pop();
+        }
+        let profile = FutureProfile {
+            schema: 1,
+            sources: vec![],
+            resolutions,
+            contracts,
+        };
+        (
+            analysis
+                .expanded_with_future_profile(
+                    "src/lib.rs",
+                    "entry",
+                    2,
+                    workflow::Detail::Expressions,
+                    &profile,
+                )
+                .unwrap()
+                .1,
+            fixture,
+        )
+    };
+    let (diagram, fixture) = make(source, false);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let root = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "fn entry")
+        .unwrap();
+    let targets: Vec<_> = diagram
+        .nodes
+        .iter()
+        .filter(|node| node.label.starts_with("[opaque] marker()"))
+        .collect();
+    assert_eq!(targets.len(), 2);
+    assert!(
+        targets
+            .iter()
+            .all(|node| reachable(&diagram, &root.id, &node.id))
+    );
+    let gates: Vec<_> = diagram
+        .nodes
+        .iter()
+        .filter(|node| node.label.contains("scope factory admitted and invoked"))
+        .collect();
+    assert_eq!(gates.len(), 2);
+    for gate in gates {
+        assert!(
+            targets
+                .iter()
+                .any(|target| reachable(&diagram, &gate.id, &target.id))
+        );
+    }
+    for node in diagram.nodes.iter().filter(|node| {
+        node.label.contains("scope not admitted")
+            || node.label.contains("cancelled before factory future poll")
+            || node.label.contains("scope future not polled")
+    }) {
+        assert!(
+            targets
+                .iter()
+                .all(|target| !reachable(&diagram, &node.id, &target.id))
+        );
+    }
+    for (text, missing) in [
+        (source.to_owned(), true),
+        (
+            source.replace("bridge(invocation);", "drop(invocation);"),
+            false,
+        ),
+        (
+            source.replace("let run_handler=", "let invoke=||async{};let run_handler="),
+            false,
+        ),
+        (source.replace("invoke().await", "async {}.await"), false),
+    ] {
+        let (diagram, _fixture) = make(&text, missing);
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|node| node.label.starts_with("[opaque] marker()"))
+        );
+    }
+}
+
+#[test]
 fn profiled_future_custody_requires_forwarders_poll_and_unshadowed_values() {
     use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
     let source = "use std::future::Future; use std::task::{Context,Waker}; fn wrap<T>(v:T)->T{v} fn drive<F:Future>(f:F){let mut f=Box::pin(f);let w=Waker::noop();let mut cx=Context::from_waker(w);let _=f.as_mut().poll(&mut cx);} fn blocked()->bool{false} fn bridge<F:Future>(f:F){ if blocked(){return;} let f=wrap(f); drive(wrap(f)); } fn marker(){} pub fn entry(){let f=wrap(async {marker();});bridge(f);}";

@@ -11,6 +11,7 @@ use syn::Expr;
 pub(super) struct FutureValue {
     pub future: DeferredLocal,
     pub origin: usize,
+    pub callbacks: BTreeMap<String, std::rc::Rc<super::projection::CallbackBinding>>,
 }
 
 fn before(a: &Site, b: &Site) -> bool {
@@ -116,6 +117,7 @@ pub(super) fn value(
                     return valid.then(|| FutureValue {
                         future: (*future).clone(),
                         origin: function,
+                        callbacks: BTreeMap::new(),
                     });
                 }
                 let init: Expr = syn::parse_str(&local.initializer).ok()?;

@@ -231,6 +231,25 @@ pub struct DeferredLocal {
     /// Enclosing source operations, outside-in; these are not proven forwarders.
     pub wrappers: Vec<DeferredWrapper>,
     pub body: Vec<Step>,
+    /// Directly awaited local factory futures, still requiring profile custody.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guarded_factories: Vec<GuardedFactory>,
+}
+/// A factory value constructed on each written branch then directly awaited.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct GuardedFactory {
+    pub await_site: Site,
+    pub cases: Vec<GuardedFactoryCase>,
+}
+/// Written factory call and its condition; admission and polling are not implied.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct GuardedFactoryCase {
+    pub condition: String,
+    pub spelling: String,
+    pub call_site: Site,
+    pub closure: AsyncClosure,
 }
 /// A written enclosing operation around a deferred expression.
 #[derive(Debug, Clone, Serialize, Deserialize)]
