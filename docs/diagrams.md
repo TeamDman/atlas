@@ -255,6 +255,15 @@ future's poll remains an explicit opaque boundary. The substitution can be
 carried to a `self` call on the same written generic owner; it is not inferred
 through arbitrary aliases, closures, future wrappers or dynamic dispatch.
 
+For that witnessed substitution, a directly written field of the generic
+owner can use the matching written trait bound to select a unique concrete
+workspace implementation as a source candidate. Competing bound methods,
+conditional fields, unknown aliases and ambiguous implementations remain
+boundaries. A directly returned `::std::boxed::Box::pin(self.method())` may
+open a matching async inherent method only at the subsequent poll gate; a
+constructed but unpolled async method stays closed. Other wrappers and
+indirect future propagation remain opaque.
+
 For a bounded builder chain, a unique written constructor returning `Self`
 and unique inherent methods returning `Self` can supply a receiver source
 candidate. Conditional methods retain their written `cfg` attributes in the

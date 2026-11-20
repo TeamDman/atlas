@@ -91,6 +91,38 @@ pub(super) struct Reader<'a> {
     unindexed_calls: bool,
 }
 impl Reader<'_> {
+    pub(super) fn returned_pinned_self_call(&self, block: &syn::Block) -> Option<Site> {
+        let Stmt::Expr(Expr::Call(call), None) = block.stmts.last()? else {
+            return None;
+        };
+        if !call.attrs.is_empty() || call.args.len() != 1 {
+            return None;
+        }
+        let Expr::Path(path) = &*call.func else {
+            return None;
+        };
+        if path.qself.is_some() {
+            return None;
+        }
+        let names: Vec<_> = path
+            .path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect();
+        if path.path.leading_colon.is_none() || names != ["std", "boxed", "Box", "pin"] {
+            return None;
+        }
+        let Expr::MethodCall(method) = call.args.first()? else {
+            return None;
+        };
+        if !method.attrs.is_empty()
+            || !matches!(&*method.receiver, Expr::Path(path) if path.qself.is_none() && path.path.is_ident("self"))
+        {
+            return None;
+        }
+        Some(self.site(method.span()))
+    }
     pub(super) fn deferred_block(&self, block: &syn::Block) -> Vec<Step> {
         Reader {
             source: self.source,

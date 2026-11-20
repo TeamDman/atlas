@@ -257,7 +257,13 @@ impl<'a> Builder<'a> {
             .calls
             .iter()
             .any(|call| &call.site == site && call.await_producer.is_some());
-        let target = self.targets.get(&(f, site.clone()))?.clone();
+        let target = self
+            .substitution
+            .as_ref()
+            .and_then(|substitution| {
+                source_call.and_then(|call| index.resolve_substituted_field(f, call, substitution))
+            })
+            .or_else(|| self.targets.get(&(f, site.clone())).cloned())?;
         let (target, reason, candidate) = match target {
             Target::Function(j) if self.stack.contains(&j) => {
                 (None, "recursion boundary".into(), false)
@@ -307,12 +313,15 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        let async_callback_target = index.functions()[j].flow.async_function
-            && !index.functions()[j].flow.callback_parameters.is_empty();
-        if async_callback_target && !source_call.is_some_and(|call| call.directly_awaited) {
+        let async_target = index.functions()[j].flow.async_function;
+        let async_callback_target =
+            async_target && !index.functions()[j].flow.callback_parameters.is_empty();
+        if async_target
+            && !source_call.is_some_and(|call| call.directly_awaited || call.awaited_block_call)
+        {
             if let Some(node) = self.nodes.iter_mut().find(|node| node.id == id) {
                 node.label.push_str(
-                    "\n[async future constructed; callback body not entered without direct await]",
+                    "\n[async future constructed; body not entered without direct await]",
                 );
             }
             return Some(id.to_owned());
@@ -368,10 +377,20 @@ impl<'a> Builder<'a> {
                 None
             }
         });
+        let returned_future = if implicit_await && self.depth >= 2 {
+            self.substitution.as_ref().and_then(|substitution| {
+                index
+                    .returned_pinned_async_target(j, substitution)
+                    .filter(|(target, _)| !self.stack.contains(target))
+                    .map(|(target, site)| (target, site, substitution.clone()))
+            })
+        } else {
+            None
+        };
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
         self.substitution = previous;
         self.callbacks = old_callbacks;
-        if async_callback_target {
+        if async_target {
             let poll = self.node(
                 "poll returned async function future [source candidate; completion not guaranteed]",
                 site,
@@ -391,11 +410,25 @@ impl<'a> Builder<'a> {
         }
         if implicit_await {
             let poll = self.node(
-                "poll returned future [opaque; completion not guaranteed]",
+                if returned_future.is_some() {
+                    "poll returned pinned future [source candidate; completion not guaranteed]"
+                } else {
+                    "poll returned future [opaque; completion not guaranteed]"
+                },
                 site,
             );
             self.edge(&exit, &poll, Some("candidate returns future"));
-            self.edge(&poll, &continuation, Some("if polling completes"));
+            if let Some((target, _origin, substitution)) = returned_future {
+                let previous = self.substitution.replace(substitution);
+                let future_flow = index.functions()[target].flow.clone();
+                let (future_entry, future_exit) =
+                    self.function(&future_flow, Some(target), self.depth - 2);
+                self.substitution = previous;
+                self.edge(&poll, &future_entry, Some("if polled; source candidate"));
+                self.edge(&future_exit, &continuation, Some("if polling completes"));
+            } else {
+                self.edge(&poll, &continuation, Some("if polling completes"));
+            }
         } else {
             self.edge(
                 &exit,

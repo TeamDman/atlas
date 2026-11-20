@@ -246,6 +246,12 @@ pub struct Workflow {
     pub async_function: bool,
     #[serde(default)]
     pub type_parameters: Vec<String>,
+    /// Directly written trait bounds; an empty path marks an unsupported bound.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub generic_bounds: std::collections::BTreeMap<String, Vec<Vec<String>>>,
+    /// Inner `self.method()` when the tail directly returns `::std::boxed::Box::pin(self.method())`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_pinned_self_call: Option<Site>,
     /// Callback parameters evidenced by written FnOnce bounds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_parameters: Vec<CallbackParameter>,

@@ -19,6 +19,9 @@ pub(super) struct StructShape {
     pub scope: Vec<String>,
     pub imports: BTreeMap<String, Vec<Vec<String>>>,
     pub fields: BTreeMap<String, Vec<String>>,
+    pub ambiguous_fields: BTreeSet<String>,
+    /// One written generic parameter, with optional lifetimes but no consts.
+    pub generic_parameter: Option<String>,
     pub supported: bool,
     pub public: bool,
 }
@@ -59,6 +62,7 @@ pub(in crate::analysis) struct ReceiverFacts {
     structs: BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: BTreeSet<Site>,
     generic_inherent: BTreeSet<Site>,
+    generic_owner_inherent: BTreeSet<Site>,
     conditional_inherent: BTreeMap<Site, String>,
     traits: BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: Vec<TraitImpl>,
@@ -80,6 +84,7 @@ pub(in crate::analysis) fn read(
         &mut facts.structs,
         &mut facts.inherent,
         &mut facts.generic_inherent,
+        &mut facts.generic_owner_inherent,
         &mut facts.conditional_inherent,
         &mut facts.traits,
         &mut facts.impls,
@@ -241,6 +246,7 @@ fn collect(
     structs: &mut BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: &mut BTreeSet<Site>,
     generic_inherent: &mut BTreeSet<Site>,
+    generic_owner_inherent: &mut BTreeSet<Site>,
     conditional_inherent: &mut BTreeMap<Site, String>,
     traits: &mut BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: &mut Vec<TraitImpl>,
@@ -264,6 +270,7 @@ fn collect(
                         structs,
                         inherent,
                         generic_inherent,
+                        generic_owner_inherent,
                         conditional_inherent,
                         traits,
                         impls,
@@ -272,8 +279,12 @@ fn collect(
             }
             Item::Struct(s) => {
                 let mut fields = BTreeMap::new();
+                let mut ambiguous_fields = BTreeSet::new();
                 for field in &s.fields {
                     if conditional(&field.attrs) {
+                        if let Some(name) = &field.ident {
+                            ambiguous_fields.insert(name.to_string());
+                        }
                         continue;
                     }
                     let (Some(name), syn::Type::Path(ty)) = (&field.ident, &field.ty) else {
@@ -288,21 +299,39 @@ fn collect(
                     {
                         continue;
                     }
-                    fields.insert(
-                        name.to_string(),
-                        ty.path
-                            .segments
-                            .iter()
-                            .map(|s| s.ident.to_string())
-                            .collect(),
-                    );
+                    if fields
+                        .insert(
+                            name.to_string(),
+                            ty.path
+                                .segments
+                                .iter()
+                                .map(|s| s.ident.to_string())
+                                .collect(),
+                        )
+                        .is_some()
+                    {
+                        ambiguous_fields.insert(name.to_string());
+                    }
                 }
+                let type_parameters: Vec<_> = s.generics.type_params().collect();
+                let generic_parameter = match type_parameters.as_slice() {
+                    [parameter]
+                        if !conditional(&s.attrs)
+                            && s.generics.const_params().next().is_none()
+                            && parameter.default.is_none() =>
+                    {
+                        Some(parameter.ident.to_string())
+                    }
+                    _ => None,
+                };
                 let mut key = scope.to_vec();
                 key.push(s.ident.to_string());
                 structs.entry(key).or_default().push(StructShape {
                     scope: scope.to_vec(),
                     imports: imports.clone(),
                     fields,
+                    ambiguous_fields,
+                    generic_parameter,
                     supported: s.generics.params.is_empty()
                         && s.generics.where_clause.is_none()
                         && !conditional(&s.attrs),
@@ -339,6 +368,21 @@ fn collect(
                             &mut *generic_inherent
                         };
                         sites.insert(Site::at(file, f.sig.span()));
+                    }
+                }
+            }
+            Item::Impl(i)
+                if i.trait_.is_none()
+                    && !conditional(&i.attrs)
+                    && i.generics.const_params().next().is_none() =>
+            {
+                for member in &i.items {
+                    if let syn::ImplItem::Fn(f) = member
+                        && selection.admits(f.span())
+                        && !conditional(&f.attrs)
+                        && f.sig.receiver().is_some()
+                    {
+                        generic_owner_inherent.insert(Site::at(file, f.sig.span()));
                     }
                 }
             }
@@ -501,6 +545,8 @@ impl Index {
                 self.inherent_sites.extend(facts.inherent.iter().cloned());
                 self.generic_inherent_sites
                     .extend(facts.generic_inherent.iter().cloned());
+                self.generic_owner_inherent_sites
+                    .extend(facts.generic_owner_inherent.iter().cloned());
                 self.conditional_inherent_sites
                     .extend(facts.conditional_inherent.clone());
                 for (path, shapes) in &facts.traits {

@@ -17,9 +17,64 @@ pub(super) struct Function<'a> {
     owner: Option<String>,
     public_free: bool,
     parameters: Vec<String>,
+    bounds: std::collections::BTreeMap<String, Vec<Vec<String>>>,
     imports: std::collections::BTreeMap<String, Vec<Vec<String>>>,
     signature: &'a syn::Signature,
     body: &'a syn::Block,
+}
+fn generic_bounds(
+    generics: &[&syn::Generics],
+) -> std::collections::BTreeMap<String, Vec<Vec<String>>> {
+    let mut out = std::collections::BTreeMap::<String, Vec<Vec<String>>>::new();
+    for generics in generics {
+        let mut add = |name: &str,
+                       bounds: &syn::punctuated::Punctuated<
+            syn::TypeParamBound,
+            syn::Token![+],
+        >| {
+            for bound in bounds {
+                if let syn::TypeParamBound::Trait(bound) = bound
+                    && bound.lifetimes.is_none()
+                    && bound.maybe.is_none()
+                    && bound.modifiers.require_empty().is_ok()
+                    && bound
+                        .path
+                        .segments
+                        .iter()
+                        .all(|segment| matches!(segment.arguments, syn::PathArguments::None))
+                {
+                    out.entry(name.into()).or_default().push(
+                        bound
+                            .path
+                            .segments
+                            .iter()
+                            .map(|segment| segment.ident.to_string())
+                            .collect(),
+                    );
+                } else if !matches!(bound, syn::TypeParamBound::Lifetime(_)) {
+                    // An unsupported bound may declare the same method; do not
+                    // silently discard that ambiguity during substitution.
+                    out.entry(name.into()).or_default().push(vec![]);
+                }
+            }
+        };
+        for parameter in generics.type_params() {
+            add(&parameter.ident.to_string(), &parameter.bounds);
+        }
+        if let Some(clause) = &generics.where_clause {
+            for predicate in &clause.predicates {
+                if let syn::WherePredicate::Type(predicate) = predicate
+                    && predicate.lifetimes.is_none()
+                    && let syn::Type::Path(path) = &predicate.bounded_ty
+                    && path.qself.is_none()
+                    && let Some(name) = path.path.get_ident()
+                {
+                    add(&name.to_string(), &predicate.bounds);
+                }
+            }
+        }
+    }
+    out
 }
 pub(super) fn collect<'a>(
     items: &'a [Item],
@@ -51,6 +106,7 @@ pub(super) fn collect<'a>(
                     .type_params()
                     .map(|p| p.ident.to_string())
                     .collect(),
+                bounds: generic_bounds(&[&f.sig.generics]),
                 imports: imports.clone(),
                 signature: &f.sig,
                 body: &f.block,
@@ -84,6 +140,7 @@ pub(super) fn collect<'a>(
                                 .chain(f.sig.generics.type_params())
                                 .map(|p| p.ident.to_string())
                                 .collect(),
+                            bounds: generic_bounds(&[&i.generics, &f.sig.generics]),
                             imports: imports.clone(),
                             signature: &f.sig,
                             body: &f.block,
@@ -111,6 +168,7 @@ pub(super) fn collect<'a>(
                                 .chain(f.sig.generics.type_params())
                                 .map(|p| p.ident.to_string())
                                 .collect(),
+                            bounds: generic_bounds(&[&t.generics, &f.sig.generics]),
                             imports: imports.clone(),
                             signature: &f.sig,
                             body,
@@ -207,6 +265,8 @@ impl Reader<'_> {
             public_free_function: function.public_free,
             async_function: function.signature.asyncness.is_some(),
             type_parameters: function.parameters.clone(),
+            generic_bounds: function.bounds.clone(),
+            returned_pinned_self_call: self.returned_pinned_self_call(function.body),
             callback_parameters: super::facts::callback_parameters(function.signature),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),

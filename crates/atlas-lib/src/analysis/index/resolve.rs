@@ -453,7 +453,7 @@ impl Index {
             if matches.next().is_some() {
                 return None;
             }
-            found.push((index, format!("IntoFuture impl at {}; {} = {}; written trait bounds matched; lifetimes, external impls and macro effects not proved", implementation.site.link(), parameter, concrete.join("::")), AwaitSubstitution { owner: owner.clone(), parameter: parameter.clone(), concrete: concrete.clone() }));
+            found.push((index, format!("IntoFuture impl at {}; {} = {}; written trait bounds matched; lifetimes, external impls and macro effects not proved", implementation.site.link(), parameter, concrete.join("::")), AwaitSubstitution { owner: owner.clone(), parameter: parameter.clone(), concrete: concrete.clone(), trait_path: producer_trait.clone() }));
         }
         match found.as_slice() {
             [(index, reason, substitution)] => Some((
@@ -535,6 +535,157 @@ impl Index {
             && b.flow.type_parameters.contains(&substitution.parameter)
             && self.canonical(caller, &["Self".into()]).as_ref() == Some(&substitution.owner)
             && self.canonical(callee, &["Self".into()]).as_ref() == Some(&substitution.owner)
+    }
+    /// Resolve a direct generic field through the concrete type already
+    /// witnessed at an await. This follows the written bound, not a same-named
+    /// inherent method on the concrete type; external/macro cases remain open.
+    pub(crate) fn resolve_substituted_field(
+        &self,
+        function: usize,
+        call: &Call,
+        substitution: &AwaitSubstitution,
+    ) -> Option<Target> {
+        if !self.same_substituted_owner(function, function, substitution) {
+            return None;
+        }
+        let syn::Expr::Field(field) =
+            syn::parse_str::<syn::Expr>(call.receiver.as_deref()?).ok()?
+        else {
+            return None;
+        };
+        if !matches!(&*field.base, syn::Expr::Path(path) if path.qself.is_none() && path.path.is_ident("self"))
+        {
+            return None;
+        }
+        let syn::Member::Named(name) = field.member else {
+            return None;
+        };
+        let [shape] = self.structs.get(&substitution.owner)?.as_slice() else {
+            return None;
+        };
+        let parameter = shape.generic_parameter.as_ref()?;
+        if shape.ambiguous_fields.contains(&name.to_string())
+            || shape.fields.get(&name.to_string())?.as_slice() != [parameter.as_str()]
+        {
+            return None;
+        }
+        if !self.owner_uses_substitution(function, substitution) {
+            return None;
+        }
+        let f = self.functions.get(function)?;
+        let trait_path = substitution.trait_path.as_deref()?;
+        let bounds = f.flow.generic_bounds.get(&substitution.parameter)?;
+        if bounds.iter().any(Vec::is_empty) {
+            return None;
+        }
+        if !bounds
+            .iter()
+            .any(|bound| self.canonical(function, bound).as_deref() == Some(trait_path))
+        {
+            return None;
+        }
+        for bound in bounds {
+            if let Some(path) = self.canonical(function, bound)
+                && path != trait_path
+                && self.traits.get(&path).is_some_and(|shapes| {
+                    shapes
+                        .iter()
+                        .any(|shape| shape.methods.contains_key(&call.spelling))
+                })
+            {
+                return None;
+            }
+        }
+        Some(self.trait_method_candidate(
+            function,
+            &substitution.concrete,
+            call,
+            call.receiver.as_deref()?,
+            Some(trait_path),
+        ))
+    }
+    fn owner_uses_substitution(&self, function: usize, substitution: &AwaitSubstitution) -> bool {
+        self.owner_uses_substitution_inner(function, substitution)
+            .is_some()
+    }
+    fn owner_uses_substitution_inner(
+        &self,
+        function: usize,
+        substitution: &AwaitSubstitution,
+    ) -> Option<()> {
+        if !self.same_substituted_owner(function, function, substitution) {
+            return None;
+        }
+        let f = self.functions.get(function)?;
+        let syn::Type::Path(owner) = syn::parse_str::<syn::Type>(f.flow.owner.as_deref()?).ok()?
+        else {
+            return None;
+        };
+        let syn::PathArguments::AngleBracketed(arguments) = &owner.path.segments.last()?.arguments
+        else {
+            return None;
+        };
+        let mut types = Vec::new();
+        for argument in &arguments.args {
+            match argument {
+                syn::GenericArgument::Type(ty) => types.push(ty),
+                syn::GenericArgument::Lifetime(_) => {}
+                _ => return None,
+            }
+        }
+        let [syn::Type::Path(argument)] = types.as_slice() else {
+            return None;
+        };
+        if argument.qself.is_some() || !argument.path.is_ident(&substitution.parameter) {
+            return None;
+        }
+        Some(())
+    }
+    /// Follow a directly returned pinned async inherent self-call only as a
+    /// source candidate; the caller must place its body behind a poll gate.
+    pub(crate) fn returned_pinned_async_target(
+        &self,
+        function: usize,
+        substitution: &AwaitSubstitution,
+    ) -> Option<(usize, crate::analysis::workflow::Site)> {
+        if !self.owner_uses_substitution(function, substitution) {
+            return None;
+        }
+        let f = self.functions.get(function)?;
+        if f.flow.imports.contains_key("std") || shadowed(&f.flow.local_names, "std") {
+            return None;
+        }
+        for length in 1..=f.scope.len() {
+            let mut path = f.scope[..length].to_vec();
+            path.push("std".into());
+            if self.scopes.values().flatten().any(|scope| scope == &path)
+                || self.traits.keys().any(|item| item.starts_with(&path))
+                || self.structs.keys().any(|item| item.starts_with(&path))
+            {
+                return None;
+            }
+        }
+        let site = f.flow.returned_pinned_self_call.as_ref()?;
+        let mut calls = f
+            .flow
+            .calls
+            .iter()
+            .filter(|call| &call.site == site && call.receiver.as_deref() == Some("self"));
+        let call = calls.next()?;
+        if calls.next().is_some() {
+            return None;
+        }
+        let Target::Function(target) = self.resolve(function, call) else {
+            return None;
+        };
+        let body = self.functions.get(target)?;
+        if !body.flow.async_function
+            || !body.generic_owner_inherent
+            || !self.owner_uses_substitution(target, substitution)
+        {
+            return None;
+        }
+        Some((target, site.clone()))
     }
     fn resolve_receiver(
         &self,
@@ -865,7 +1016,7 @@ impl Index {
                     "receiver {receiver}: competing inherent method observations"
                 ))
             }
-            _ => self.trait_method_candidate(function, &owner, call, receiver),
+            _ => self.trait_method_candidate(function, &owner, call, receiver, None),
         }
     }
 
@@ -875,6 +1026,7 @@ impl Index {
         owner: &[String],
         call: &Call,
         receiver: &str,
+        constrained_trait: Option<&[String]>,
     ) -> Target {
         let f = &self.functions[function];
         if f.flow.imports.contains_key("*")
@@ -903,6 +1055,12 @@ impl Index {
             {
                 visible.insert(path.clone());
             }
+        }
+        if let Some(constrained) = constrained_trait {
+            // The written generic bound itself is a scope witness, even when
+            // the trait is named by a fully qualified path rather than a use.
+            visible.clear();
+            visible.insert(constrained.to_vec());
         }
         let mut candidates = Vec::new();
         for trait_path in visible {
@@ -1118,4 +1276,90 @@ fn shadowed(local_names: &[String], first: &str) -> bool {
     local_names.iter().any(|name| name == first)
         || (local_names.iter().any(|name| name == "*")
             && !matches!(first, "crate" | "self" | "super" | "Self"))
+}
+
+#[cfg(test)]
+mod workspace_probe {
+    use super::*;
+    use syn::{spanned::Spanned, visit::Visit};
+
+    #[test]
+    #[ignore = "requires an explicitly selected external workspace and source locations"]
+    fn inspect_deferred_field_with_await_substitution() {
+        let env = |name| std::env::var(name).expect("probe environment");
+        let root = std::path::PathBuf::from(env("ATLAS_PROBE_ROOT"));
+        let caller_path = env("ATLAS_PROBE_CALLER_PATH");
+        let caller_selector = env("ATLAS_PROBE_CALLER_FUNCTION");
+        let target_path = env("ATLAS_PROBE_TARGET_PATH");
+        let target_selector = env("ATLAS_PROBE_TARGET_FUNCTION");
+        let expected_path = env("ATLAS_PROBE_EXPECTED_PATH");
+        let expected_selector = env("ATLAS_PROBE_EXPECTED_FUNCTION");
+        let line: usize = env("ATLAS_PROBE_CALL_LINE").parse().expect("call line");
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(&root)
+            .no_deps()
+            .exec()
+            .expect("metadata");
+        let graph = crate::discovery::scan_metadata(&metadata).expect("discovery");
+        let architecture = crate::architecture::Architecture {
+            schema: 1,
+            provenance: vec![],
+            modules: vec![],
+            workflows: vec![],
+        };
+        let index = Index::new(&root, &metadata, &graph, &architecture).expect("index");
+        let caller = index
+            .select(&caller_path, &caller_selector)
+            .expect("caller");
+        let substitutions: Vec<_> = index.functions()[caller]
+            .flow
+            .calls
+            .iter()
+            .filter_map(|call| index.await_substitution(caller, call))
+            .collect();
+        let [substitution] = substitutions.as_slice() else {
+            panic!("expected exactly one substitution");
+        };
+        let function = index
+            .select(&target_path, &target_selector)
+            .expect("generic function");
+        let source = std::fs::read_to_string(root.join(&target_path)).expect("source");
+        let syntax = syn::parse_file(&source).expect("parse source");
+        struct Find(usize, Vec<syn::ExprMethodCall>);
+        impl<'ast> Visit<'ast> for Find {
+            fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+                if call.method.span().start().line == self.0 {
+                    self.1.push(call.clone());
+                }
+                syn::visit::visit_expr_method_call(self, call);
+            }
+        }
+        let mut find = Find(line, vec![]);
+        find.visit_file(&syntax);
+        let [call] = find.1.as_slice() else {
+            panic!("expected exactly one method call at line");
+        };
+        let call = Call {
+            spelling: call.method.to_string(),
+            receiver: Some(crate::source_text::text(&source, call.receiver.span())),
+            arguments: vec![],
+            site: crate::analysis::workflow::Site::at(&target_path, call.span()),
+            awaited_block_call: false,
+            await_producer: None,
+            directly_awaited: false,
+            awaited_value: None,
+            awaited_arity: 0,
+            async_closures: vec![],
+        };
+        let expected = index
+            .select(&expected_path, &expected_selector)
+            .expect("expected implementation");
+        match index.resolve_substituted_field(function, &call, substitution) {
+            Some(Target::Candidate(target, reason)) => {
+                assert_eq!(target, expected, "resolved candidate");
+                assert!(reason.contains("via impl"), "candidate provenance");
+            }
+            other => panic!("no unique candidate: {other:?}"),
+        }
+    }
 }

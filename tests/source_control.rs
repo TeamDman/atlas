@@ -230,6 +230,384 @@ fn directly_awaited_callback_residual_exits_its_future() {
 }
 
 #[test]
+fn concrete_await_substitution_selects_generic_field_trait_across_crates() {
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain','model']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\nmodel={path='../model'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        (
+            "model/Cargo.toml",
+            "[package]\nname='model'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "app/src/lib.rs",
+            "use domain::Execute; use model::Req; pub async fn entry(){ Req{}.execute().await; }",
+        ),
+        (
+            "domain/src/lib.rs",
+            "use std::future::{IntoFuture,Ready,ready}; pub struct Work<R>{request:R} pub trait Execute:Sized { fn run(self); fn execute(self)->Work<Self>{Work{request:self}} } fn cancelled()->bool{false} impl<R:Execute> Work<R> { fn drive(self)->Ready<()> { if cancelled(){return ready(());} self.request.run(); ready(()) } } impl<R:Execute> IntoFuture for Work<R>{type Output=();type IntoFuture=Ready<()>;fn into_future(self)->Self::IntoFuture{self.drive()}}",
+        ),
+        (
+            "model/src/lib.rs",
+            "use domain::Execute; pub struct Req{} pub struct Other{} impl Execute for Req { fn run(self){} } impl Execute for Other { fn run(self){} }",
+        ),
+    ]);
+    let generate = || {
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .expect("fixture metadata");
+        let graph = discovery::scan_metadata(&metadata).expect("fixture discovery");
+        workflow::expanded(
+            fixture.path(),
+            &metadata,
+            &graph,
+            "app/src/lib.rs",
+            "entry",
+            4,
+        )
+        .expect("fixture flow")
+        .1
+    };
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--workspace", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .expect("run fixture compiler");
+    assert!(
+        compiled.status.success(),
+        "fixture compile: {}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let diagram = generate();
+    let chosen = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("fn Req::run"))
+        .expect("concrete request implementation");
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    let cancelled = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.starts_with("return ready"))
+        .expect("cancellation return");
+    assert!(!reachable(&diagram, &cancelled.id, &chosen.id));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("source candidate")
+                && node.label.contains("Execute via impl"))
+    );
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::Execute; use model::Req; pub async fn entry(){ Req{}.execute(); }",
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::Execute; use model::Other; pub async fn entry(){ Other{}.execute().await; }",
+    );
+    let other = generate();
+    assert!(
+        other
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    assert!(
+        !other
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    let domain =
+        std::fs::read_to_string(fixture.path().join("domain/src/lib.rs")).expect("fixture source");
+    let model =
+        std::fs::read_to_string(fixture.path().join("model/src/lib.rs")).expect("fixture source");
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::Execute; use model::Req; pub async fn entry(){ Req{}.execute().await; }",
+    );
+    fixture.write(
+        "model/src/lib.rs",
+        &format!("{model}\nimpl Req {{ pub fn run(self) {{}} }}"),
+    );
+    let trait_dispatch = generate();
+    let selected = trait_dispatch
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("fn Req::run"))
+        .expect("trait dispatch");
+    assert!(
+        selected
+            .source_sites
+            .iter()
+            .any(|site| site.ends_with("model/src/lib.rs:1"))
+    );
+    fixture.write("model/src/lib.rs", &model);
+    fixture.write(
+        "domain/src/lib.rs",
+        &domain.replace(
+            "impl<R:Execute> Work<R>",
+            "trait Clash { fn run(self); } impl<R:Execute+Clash> Work<R>",
+        ),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write(
+        "domain/src/lib.rs",
+        &domain.replace(
+            "impl<R:Execute> Work<R>",
+            "trait GenericClash<T> { fn run(self); } impl<R:Execute+GenericClash<u8>> Work<R>",
+        ),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write("domain/src/lib.rs", &domain);
+    fixture.write(
+        "model/src/lib.rs",
+        &format!(
+            "{model} #[cfg(feature=\"alternate\")] impl Execute for Req {{ fn run(self){{}} }}"
+        ),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write("domain/src/lib.rs", "use std::future::{IntoFuture,Ready,ready}; pub struct Work<R>{request:R} pub mod api { use super::Work; pub trait Execute:Sized { fn run(self); fn execute(self)->Work<Self>{Work{request:self}} } } impl<R:api::Execute> Work<R> { fn drive(self)->Ready<()> { self.request.run(); ready(()) } } impl<R:api::Execute> IntoFuture for Work<R>{type Output=();type IntoFuture=Ready<()>;fn into_future(self)->Self::IntoFuture{self.drive()}}");
+    fixture.write(
+        "model/src/lib.rs",
+        "use domain::api::Execute; pub struct Req{} impl Execute for Req { fn run(self){} }",
+    );
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::api::Execute; use model::Req; pub async fn entry(){ Req{}.execute().await; }",
+    );
+    assert!(
+        generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+}
+
+#[test]
+fn pinned_returned_async_method_preserves_concrete_cross_crate_substitution() {
+    let domain = "use std::{future::{Future,IntoFuture},pin::Pin}; pub struct Req{} pub struct Other{} pub struct Work<R>{request:R} pub trait Execute:Sized { fn run(self); fn execute(self)->Work<Self>{Work{request:self}} } impl Execute for Req { fn run(self){} } impl Execute for Other { fn run(self){} } fn cancelled()->bool{false} impl<R:Execute+'static> Work<R> { async fn drive(self) { if cancelled(){return;} self.request.run(); } } impl<R:Execute+'static> IntoFuture for Work<R>{type Output=();type IntoFuture=Pin<Box<dyn Future<Output=()>>>;fn into_future(self)->Self::IntoFuture{::std::boxed::Box::pin(self.drive())}}";
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        (
+            "app/src/lib.rs",
+            "use domain::{Req, Execute}; pub async fn entry(){ Req{}.execute().await; }",
+        ),
+        ("domain/src/lib.rs", domain),
+    ]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--workspace", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .expect("run fixture compiler");
+    assert!(
+        compiled.status.success(),
+        "fixture compile: {}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let generate = || {
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .expect("fixture metadata");
+        let graph = discovery::scan_metadata(&metadata).expect("fixture discovery");
+        workflow::expanded(
+            fixture.path(),
+            &metadata,
+            &graph,
+            "app/src/lib.rs",
+            "entry",
+            5,
+        )
+        .expect("fixture flow")
+        .1
+    };
+    let diagram = generate();
+    let poll = diagram
+        .nodes
+        .iter()
+        .find(|node| {
+            node.label
+                .contains("poll returned pinned future [source candidate")
+        })
+        .expect("pinned future poll");
+    let body = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("fn Work<R>::drive"))
+        .expect("polled async body");
+    let chosen = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("fn Req::run"))
+        .expect("concrete request body");
+    assert!(reachable(&diagram, &poll.id, &body.id) && reachable(&diagram, &body.id, &chosen.id));
+    let root = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "fn entry")
+        .expect("entry node");
+    assert!(!reachable_without(&diagram, &root.id, &chosen.id, &poll.id));
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    let cancelled = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "return")
+        .expect("cancellation return");
+    assert!(!reachable(&diagram, &cancelled.id, &chosen.id));
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::{Req, Execute}; pub async fn entry(){ Req{}.execute(); }",
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write(
+        "app/src/lib.rs",
+        "use domain::{Other, Execute}; pub async fn entry(){ Other{}.execute().await; }",
+    );
+    let other = generate();
+    assert!(
+        other
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    assert!(
+        !other
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Req::run"))
+    );
+    fixture.write(
+        "domain/src/lib.rs",
+        &domain.replace(
+            "::std::boxed::Box::pin(self.drive())",
+            "{ let _never_polled = self.drive(); ::std::boxed::Box::pin(async {}) }",
+        ),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    fixture.write(
+        "domain/src/lib.rs",
+        &domain.replace("::std::boxed::Box::pin", "custom::Box::pin"),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+    fixture.write(
+        "domain/src/lib.rs",
+        &format!("use crate::fake as std; {domain}"),
+    );
+    assert!(
+        !generate()
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn Other::run"))
+    );
+}
+
+#[test]
+fn async_function_body_is_not_expanded_at_future_construction() {
+    let (_, unpolled) = inspect(
+        &[(
+            "src/lib.rs",
+            "async fn page(){work();} fn work(){} pub fn entry(){page();}",
+        )],
+        "entry",
+        2,
+    );
+    assert!(
+        !unpolled
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn page" || node.label == "fn work")
+    );
+    let (_, polled) = inspect(
+        &[(
+            "src/lib.rs",
+            "async fn page(){work();} fn work(){} pub async fn entry(){page().await;}",
+        )],
+        "entry",
+        2,
+    );
+    assert!(polled.nodes.iter().any(|node| node.label == "fn page"));
+    assert!(
+        polled
+            .edges
+            .iter()
+            .any(|edge| edge.label.as_deref() == Some("if polled"))
+    );
+}
+
+#[test]
 fn awaited_callback_requires_matching_written_argument_arity() {
     let source = "use std::future::Future; async fn invoke<F,Fut>(callback:F) where F:FnOnce(u8,u8)->Fut, Fut:Future<Output=()> { callback(1,2).await; } async fn page(_:u8,_:u8){} pub async fn entry(){ invoke(|cli, context| async move { page(cli,context).await; }).await; }";
     let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
@@ -333,6 +711,27 @@ fn reachable(d: &Diagram, from: &str, to: &str) -> bool {
         }
         if seen.insert(n.clone()) {
             todo.extend(d.edges.iter().filter(|e| e.from == n).map(|e| e.to.clone()));
+        }
+    }
+    false
+}
+fn reachable_without(d: &Diagram, from: &str, to: &str, excluded: &str) -> bool {
+    let mut todo = vec![from.to_owned()];
+    let mut seen = BTreeSet::new();
+    while let Some(node) = todo.pop() {
+        if node == excluded {
+            continue;
+        }
+        if node == to {
+            return true;
+        }
+        if seen.insert(node.clone()) {
+            todo.extend(
+                d.edges
+                    .iter()
+                    .filter(|edge| edge.from == node)
+                    .map(|edge| edge.to.clone()),
+            );
         }
     }
     false
@@ -550,11 +949,15 @@ fn direct_self_calls_in_awaited_blocks_are_bounded_source_candidates() {
     );
     assert!(diagram.nodes.iter().any(|n| n.label == "fn H::page"));
     assert!(diagram.edges.iter().any(|e| {
-        e.label.as_deref() == Some("source candidate")
+        e.label.as_deref() == Some("if polled")
             && diagram
                 .nodes
                 .iter()
                 .any(|n| n.id == e.from && n.label.contains("self.page::<u8>().await"))
+            && diagram
+                .nodes
+                .iter()
+                .any(|n| n.id == e.to && n.label.contains("poll returned async function future"))
     }));
     let (_, deferred) = inspect(
         &[(
@@ -617,11 +1020,15 @@ fn awaited_paths_in_async_blocks_refuse_shadowed_and_sync_targets() {
     );
     assert!(diagram.nodes.iter().any(|n| n.label == "fn page"));
     assert!(diagram.edges.iter().any(|e| {
-        e.label.as_deref() == Some("source candidate")
+        e.label.as_deref() == Some("if polled")
             && diagram
                 .nodes
                 .iter()
                 .any(|n| n.id == e.from && n.label.contains("page().await"))
+            && diagram
+                .nodes
+                .iter()
+                .any(|n| n.id == e.to && n.label.contains("poll returned async function future"))
     }));
     let (_, shadowed) = inspect(
         &[(

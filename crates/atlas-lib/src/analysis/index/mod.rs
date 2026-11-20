@@ -29,6 +29,7 @@ pub struct Function {
     pub flow: Workflow,
     inherent: bool,
     generic_inherent: bool,
+    generic_owner_inherent: bool,
     conditional_inherent: Option<String>,
     default_body: bool,
 }
@@ -43,6 +44,7 @@ pub(crate) struct AwaitSubstitution {
     pub owner: Vec<String>,
     pub parameter: String,
     pub concrete: Vec<String>,
+    pub trait_path: Option<Vec<String>>,
 }
 /// Immutable correlated name tables. Function and boundary positions are local
 /// to this index; borrowing accessors cannot reorder or replace their contents.
@@ -71,6 +73,7 @@ pub struct Index {
     structs: BTreeMap<Vec<String>, Vec<receivers::StructShape>>,
     inherent_sites: BTreeSet<super::workflow::Site>,
     generic_inherent_sites: BTreeSet<super::workflow::Site>,
+    generic_owner_inherent_sites: BTreeSet<super::workflow::Site>,
     conditional_inherent_sites: BTreeMap<super::workflow::Site, String>,
     traits: BTreeMap<Vec<String>, Vec<receivers::TraitShape>>,
     impls: Vec<receivers::TraitImpl>,
@@ -161,6 +164,7 @@ impl Index {
             structs: BTreeMap::new(),
             inherent_sites: BTreeSet::new(),
             generic_inherent_sites: BTreeSet::new(),
+            generic_owner_inherent_sites: BTreeSet::new(),
             conditional_inherent_sites: BTreeMap::new(),
             traits: BTreeMap::new(),
             impls: Vec::new(),
