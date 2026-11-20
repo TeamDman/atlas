@@ -23,12 +23,48 @@ pub(super) fn with_detail(flow: &Workflow, detail: Detail) -> Result<Diagram> {
     b.checked(flow)
 }
 pub(super) fn expanded(index: &Index, entry: usize, depth: u8, detail: Detail) -> Result<Diagram> {
+    expanded_with_profile(index, entry, depth, detail, None)
+}
+pub(super) fn expanded_with_profile(
+    index: &Index,
+    entry: usize,
+    depth: u8,
+    detail: Detail,
+    profile: Option<&super::future_profile::FutureProfile>,
+) -> Result<Diagram> {
     let flow = &index
         .functions()
         .get(entry)
         .ok_or_else(|| format!("invalid indexed function position {entry}"))?
         .flow;
     let mut b = Builder::new(Some(index), 600, detail);
+    b.future_profile = profile;
+    if let Some(profile) = profile {
+        b.declared.push("Future-wrapper contracts and call-token resolutions below are supplied input, not compiler proof or an execution trace; execution remains conditional on reaching and polling the value.".into());
+        b.declared.extend(profile.contracts.iter().map(|contract| {
+            format!(
+                "Declared future contract {}: {}",
+                contract.definition, contract.evidence
+            )
+        }));
+        b.declared
+            .extend(profile.resolutions.iter().map(|resolution| {
+                format!(
+                    "Declared resolution {}:{}:{} {} -> {}",
+                    resolution.path,
+                    resolution.line,
+                    resolution.column,
+                    resolution.spelling,
+                    resolution.definition
+                )
+            }));
+        b.declared.extend(profile.sources.iter().map(|source| {
+            format!(
+                "Future profile source {} sha256 {}",
+                source.path, source.sha256
+            )
+        }));
+    }
     b.function(flow, Some(entry), depth);
     b.checked(flow)
 }
@@ -51,6 +87,8 @@ struct Builder<'a> {
     substitution: Option<AwaitSubstitution>,
     callbacks: std::collections::BTreeMap<String, Rc<CallbackBinding>>,
     deferred_calls: Option<Vec<super::Call>>,
+    future_profile: Option<&'a super::future_profile::FutureProfile>,
+    future_values: std::collections::BTreeMap<String, super::future_custody::FutureValue>,
 }
 struct CallbackBinding {
     closure: super::AsyncClosure,
@@ -87,6 +125,8 @@ impl<'a> Builder<'a> {
             substitution: None,
             callbacks: std::collections::BTreeMap::new(),
             deferred_calls: None,
+            future_profile: None,
+            future_values: std::collections::BTreeMap::new(),
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -274,6 +314,62 @@ impl<'a> Builder<'a> {
         if self.deferred_calls.is_some() {
             return None;
         }
+        if let (Some(profile), Some(call)) = (self.future_profile, source_call)
+            && let Some(contract) = profile.operation(&call.site, &call.spelling)
+            && matches!(
+                contract.operation,
+                super::future_profile::Operation::ReceiverForward
+                    | super::future_profile::Operation::ArgumentForward { .. }
+            )
+            && let Some(node) = self.nodes.iter_mut().find(|node| node.id == id)
+        {
+            write!(
+                node.label,
+                "\n[declared future-forwarding summary: {}]",
+                contract.evidence
+            )
+            .expect("formatting into a String cannot fail");
+        }
+        if let (Some(profile), Some(call)) = (self.future_profile, source_call)
+            && let Some(contract) = profile.operation(&call.site, &call.spelling)
+            && let super::future_profile::Operation::PollArgument { argument } = contract.operation
+            && let Some(argument) = call.arguments.get(argument)
+            && let Ok(expr) = syn::parse_str::<syn::Expr>(argument)
+            && let Some(value) = super::future_custody::value(
+                &index.functions()[f].flow,
+                f,
+                profile,
+                &self.future_values,
+                &expr,
+                &call.site,
+                0,
+            )
+        {
+            let poll = self.node(
+                "poll forwarded future [source candidate, declared symbol profile; only if reached and polled]",
+                site,
+            );
+            self.edge(id, &poll, Some("if runtime polls; declared profile"));
+            let unresolved = self.node("future not polled or polling interrupted [opaque]", site);
+            self.edge(id, &unresolved, Some("if poll is not reached"));
+            let end = self.node(
+                "forwarded future completes (value or residual)",
+                &value.future.future,
+            );
+            let old_exit = std::mem::replace(&mut self.exit, end.clone());
+            let old_loops = std::mem::take(&mut self.loops);
+            let old_group = std::mem::replace(&mut self.group, value.future.future.path.clone());
+            let old_function = self.function.replace(value.origin);
+            let old_calls = self.deferred_calls.replace(Vec::new());
+            let ends = self.steps(&value.future.body, vec![poll]);
+            self.connect(ends, &end);
+            self.deferred_calls = old_calls;
+            self.function = old_function;
+            self.group = old_group;
+            self.loops = old_loops;
+            self.exit = old_exit;
+            return Some(end);
+        }
         let implicit_await = index.functions()[f]
             .flow
             .calls
@@ -359,6 +455,20 @@ impl<'a> Builder<'a> {
             site,
         );
         let flow = index.functions()[j].flow.clone();
+        let forwarded = self.future_profile.zip(source_call).map_or_else(
+            std::collections::BTreeMap::new,
+            |(profile, call)| {
+                super::future_custody::arguments(
+                    &index.functions()[f].flow,
+                    f,
+                    &flow,
+                    call,
+                    profile,
+                    &self.future_values,
+                )
+            },
+        );
+        let old_future_values = std::mem::replace(&mut self.future_values, forwarded);
         let previous = self.substitution.clone();
         let old_callbacks = std::mem::take(&mut self.callbacks);
         if async_callback_target
@@ -416,6 +526,7 @@ impl<'a> Builder<'a> {
             None
         };
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
+        self.future_values = old_future_values;
         self.substitution = previous;
         self.callbacks = old_callbacks;
         if async_target {

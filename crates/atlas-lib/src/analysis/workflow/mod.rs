@@ -5,6 +5,8 @@
 mod compact;
 pub(crate) mod facts;
 mod functions;
+mod future_custody;
+pub mod future_profile;
 mod parse;
 mod projection;
 use crate::{Result, diagram::Diagram};
@@ -218,6 +220,36 @@ pub struct CallbackParameter {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub arity: usize,
 }
+/// A future expression written inside a local initializer; the surrounding
+/// operations may discard it, so this does not establish value flow or polling.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct DeferredLocal {
+    pub binding: String,
+    pub initializer: Site,
+    pub future: Site,
+    /// Enclosing source operations, outside-in; these are not proven forwarders.
+    pub wrappers: Vec<DeferredWrapper>,
+    pub body: Vec<Step>,
+}
+/// A written enclosing operation around a deferred expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct DeferredWrapper {
+    pub spelling: String,
+    pub site: Site,
+    /// Whether this operation is a method call on the nested expression.
+    #[serde(default)]
+    pub is_method: bool,
+}
+/// A top-level local initializer as written, without an inferred value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LocalValue {
+    pub binding: String,
+    pub initializer: String,
+    pub site: Site,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Binding {
@@ -258,6 +290,12 @@ pub struct Workflow {
     /// Callback parameters evidenced by written FnOnce bounds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_parameters: Vec<CallbackParameter>,
+    /// Async expressions nested in named local initializers, not poll edges.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deferred_locals: Vec<DeferredLocal>,
+    /// Local initializer syntax retained for opt-in value-custody analysis.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub local_values: Vec<LocalValue>,
     pub site: Site,
     pub steps: Vec<Step>,
     pub calls: Vec<Call>,
@@ -488,6 +526,22 @@ pub fn expand_with_detail(
     check_depth(depth)?;
     let entry = index.select(path, function)?;
     let diagram = projection::expanded(index, entry, depth, detail)?;
+    Ok((index.functions()[entry].flow.clone(), diagram))
+}
+
+/// Expand using declared future-wrapper contracts. The caller must validate
+/// the profile's source custody and semantic assertions before calling this.
+pub fn expand_with_future_profile(
+    index: &crate::analysis::index::Index,
+    path: &str,
+    function: &str,
+    depth: u8,
+    detail: Detail,
+    profile: &future_profile::FutureProfile,
+) -> Result<(Workflow, Diagram)> {
+    check_depth(depth)?;
+    let entry = index.select(path, function)?;
+    let diagram = projection::expanded_with_profile(index, entry, depth, detail, Some(profile))?;
     Ok((index.functions()[entry].flow.clone(), diagram))
 }
 

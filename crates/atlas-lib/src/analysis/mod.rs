@@ -110,4 +110,28 @@ impl<'a> Analysis<'a> {
         };
         workflow::expand_with_detail(&self.index(&architecture)?, path, function, depth, detail)
     }
+    /// The caller must validate the declared contracts and source custody.
+    pub fn expanded_with_future_profile(
+        &self,
+        path: &str,
+        function: &str,
+        depth: u8,
+        detail: workflow::Detail,
+        profile: &workflow::future_profile::FutureProfile,
+    ) -> Result<(workflow::Workflow, crate::diagram::Diagram)> {
+        let architecture = Architecture {
+            schema: 1,
+            provenance: vec![],
+            modules: vec![],
+            workflows: vec![],
+        };
+        workflow::expand_with_future_profile(
+            &self.index(&architecture)?,
+            path,
+            function,
+            depth,
+            detail,
+            profile,
+        )
+    }
 }

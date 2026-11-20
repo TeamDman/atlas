@@ -264,6 +264,36 @@ open a matching async inherent method only at the subsequent poll gate; a
 constructed but unpolled async method stays closed. Other wrappers and
 indirect future propagation remain opaque.
 
+For an explicitly supplied `--future-profile` on an expanded flow, Atlas can
+also follow an immutable top-level future binding through a resolved callee's
+parameter and later top-level shadowing locals. The JSON profile declares
+source-bound call-token resolutions and contracts for a receiver forwarder,
+an argument forwarder, or a synchronous argument poller. A poller contract means
+normal return requires the future to complete; reaching or completing the
+poll is not guaranteed. The CLI checks source SHA-256 values and the written
+call and definition tokens, including the source bytes in its snapshot. The
+resolution and contract meanings are supplied assertions: Atlas does not run
+the compiler or prove them. Their evidence is retained in diagram notes. A
+profile that is stale, ambiguous, unpinned, or does not cover every wrapper
+does not justify an expansion. The graph marks the conditional poll and an
+opaque unpolled/interrupted alternative. Only simple immutable top-level
+bindings are followed; unsupported expressions, writes, conditional bindings,
+and ordinary calls in the opened future remain opaque.
+
+The version-1 profile is JSON with `schema: 1`, `sources`, `resolutions`, and
+`contracts` arrays. Each source has `path` and `sha256`; every call token and
+definition file used by a resolution must be pinned. A resolution records
+`path`, one-based `line`, zero-based `column`, `spelling`, and `definition`
+(`path:line:column`). A contract records that definition, a nonempty `evidence`
+description, and an `operation`: `{"kind":"receiver-forward"}`,
+`{"kind":"argument-forward","argument":0}`, or
+`{"kind":"poll-argument","argument":0}`. Argument indices exclude the
+method receiver. Build these observations from independently reviewed source
+or compiler output; a hash binds the supplied assertion to bytes, not to its
+correctness. Call and definition columns must have ASCII prefixes so the
+source and external token coordinate systems agree. The profile is protected
+as an input and its assertions and source hashes are listed in graph notes.
+
 For a bounded builder chain, a unique written constructor returning `Self`
 and unique inherent methods returning `Self` can supply a receiver source
 candidate. Conditional methods retain their written `cfg` attributes in the

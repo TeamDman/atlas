@@ -34,6 +34,9 @@ pub(super) struct Options {
     named_anchor: Option<String>,
     #[arg(long)]
     architecture: Option<PathBuf>,
+    /// Opt-in declared future contracts and source-bound resolution evidence.
+    #[arg(long, requires = "path", requires = "function")]
+    future_profile: Option<PathBuf>,
     #[arg(long, requires = "function")]
     path: Option<String>,
     /// The function in --path: its name, a qualified name (module::name,
@@ -51,6 +54,14 @@ pub(super) fn run(
     options: &Options,
 ) -> Result<()> {
     let (profile_text, profile) = architecture(root, options.architecture.as_deref())?;
+    let future_profile = options
+        .future_profile
+        .as_ref()
+        .map(|path| load_future_profile(root, path))
+        .transpose()?;
+    if future_profile.is_some() && options.depth == 0 {
+        return Err("--future-profile requires --depth greater than zero".into());
+    }
     let selected_anchor = options.named_anchor.as_ref().or(options.anchor.as_ref());
     let anchors = if let (Some(path), Some(function)) = (&options.path, &options.function) {
         if selected_anchor.is_some() {
@@ -89,6 +100,9 @@ pub(super) fn run(
             .as_deref()
             .ok_or("--depth needs --function")?;
         let snapshot = discovery::snapshot_metadata(metadata)?;
+        if let Some(profile) = &future_profile {
+            check_future_snapshot(root, &snapshot, profile)?;
+        }
         sources.extend(
             snapshot
                 .graph()
@@ -97,8 +111,17 @@ pub(super) fn run(
                 .map(|file| metadata.workspace_root.join(&file.path).into_std_path_buf()),
         );
         let analysis = atlas_lib::analysis::Analysis::new(&snapshot)?;
-        let (flow, diagram) =
-            analysis.expanded_with_detail(path, function, options.depth, options.detail)?;
+        let (flow, diagram) = if let Some(profile) = &future_profile {
+            analysis.expanded_with_future_profile(
+                path,
+                function,
+                options.depth,
+                options.detail,
+                profile,
+            )?
+        } else {
+            analysis.expanded_with_detail(path, function, options.depth, options.detail)?
+        };
         (vec![(function.to_owned(), flow)], diagram)
     } else {
         sources = discovery::source_paths(metadata)?;
@@ -133,7 +156,11 @@ pub(super) fn run(
                 .architecture
                 .iter()
                 .map(|path| root.join(path))
-                .chain(anchors.iter().map(|anchor| root.join(&anchor.path))),
+                .chain(anchors.iter().map(|anchor| root.join(&anchor.path)))
+                .chain(options.future_profile.iter().map(|path| root.join(path)))
+                .chain(future_profile.iter().flat_map(|profile| {
+                    profile.sources.iter().map(|source| root.join(&source.path))
+                })),
         ),
     );
     let pending = destination.prepare(
@@ -167,6 +194,150 @@ pub(super) fn run(
         render(&options.render, &diagram)
     };
     destination.write(artifact, pending)
+}
+
+fn load_future_profile(
+    root: &Path,
+    path: &Path,
+) -> Result<workflow::future_profile::FutureProfile> {
+    use std::collections::BTreeSet;
+    let profile: workflow::future_profile::FutureProfile =
+        serde_json::from_slice(&std::fs::read(root.join(path))?)?;
+    if profile.schema != 1 {
+        return Err("unsupported future profile schema".into());
+    }
+    let mut sources = BTreeSet::new();
+    for source in &profile.sources {
+        let full = root.join(&source.path).canonicalize()?;
+        let bytes = std::fs::read(&full)?;
+        let digest = sha256_hex(&bytes);
+        if digest != source.sha256 {
+            return Err(format!("future profile source digest mismatch: {}", source.path).into());
+        }
+        if !sources.insert(full) {
+            return Err("duplicate future profile source".into());
+        }
+    }
+    let mut tokens = BTreeSet::new();
+    for resolution in &profile.resolutions {
+        let source = root.join(&resolution.path).canonicalize()?;
+        if !sources.contains(&source) {
+            return Err("future profile resolution source not pinned".into());
+        }
+        let text = std::fs::read_to_string(source)?;
+        let line = text
+            .lines()
+            .nth(
+                resolution
+                    .line
+                    .checked_sub(1)
+                    .ok_or("invalid profile line")?,
+            )
+            .ok_or("invalid profile line")?;
+        if !token_matches(line, resolution.column, &resolution.spelling) {
+            return Err("future profile resolution token mismatch".into());
+        }
+        if !tokens.insert((resolution.path.clone(), resolution.line, resolution.column)) {
+            return Err("duplicate future profile resolution token".into());
+        }
+        let (definition_prefix, definition_column) = resolution
+            .definition
+            .rsplit_once(':')
+            .ok_or("invalid profile definition")?;
+        let (definition_path, definition_line) = definition_prefix
+            .rsplit_once(':')
+            .ok_or("invalid profile definition")?;
+        let definition_path = root.join(definition_path).canonicalize()?;
+        let definition_line: usize = definition_line.parse()?;
+        let definition_column: usize = definition_column.parse()?;
+        if !sources.contains(&definition_path) {
+            return Err("future profile definition source not pinned".into());
+        }
+        let definition_source = std::fs::read_to_string(definition_path)?;
+        let line = definition_source
+            .lines()
+            .nth(
+                definition_line
+                    .checked_sub(1)
+                    .ok_or("invalid definition line")?,
+            )
+            .ok_or("invalid definition line")?;
+        if !token_matches(line, definition_column, &resolution.spelling) {
+            return Err("future profile definition token mismatch".into());
+        }
+    }
+    let mut definitions = BTreeSet::new();
+    for contract in &profile.contracts {
+        if contract.evidence.trim().is_empty() {
+            return Err("future profile contract missing evidence".into());
+        }
+        if !definitions.insert(&contract.definition) {
+            return Err("duplicate future profile contract".into());
+        }
+        if !profile
+            .resolutions
+            .iter()
+            .any(|resolution| resolution.definition == contract.definition)
+        {
+            return Err("future profile contract has no resolution".into());
+        }
+    }
+    Ok(profile)
+}
+
+fn token_matches(line: &str, column: usize, token: &str) -> bool {
+    line.get(..column).is_some_and(|prefix| {
+        prefix.is_ascii()
+            && prefix
+                .chars()
+                .next_back()
+                .is_none_or(|ch| ch != '_' && !ch.is_alphanumeric())
+    }) && line
+        .get(column..)
+        .and_then(|tail| tail.strip_prefix(token))
+        .is_some_and(|tail| {
+            tail.chars()
+                .next()
+                .is_none_or(|ch| ch != '_' && !ch.is_alphanumeric())
+        })
+}
+
+fn check_future_snapshot(
+    root: &Path,
+    snapshot: &discovery::Snapshot,
+    profile: &workflow::future_profile::FutureProfile,
+) -> Result<()> {
+    let root = root.canonicalize()?;
+    for source in &profile.sources {
+        let path = root.join(&source.path).canonicalize()?;
+        let Ok(relative) = path.strip_prefix(&root) else {
+            continue;
+        };
+        if relative
+            .extension()
+            .is_none_or(|extension| extension != "rs")
+        {
+            continue;
+        }
+        let path = relative.to_str().ok_or("profile path is not UTF-8")?;
+        let captured = snapshot
+            .source_facts(path)
+            .ok_or("profile source missing from captured workspace")?;
+        let digest = sha256_hex(captured.text().as_bytes());
+        if digest != source.sha256 {
+            return Err(format!("future profile differs from captured source: {path}").into());
+        }
+    }
+    Ok(())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut out = String::with_capacity(64);
+    for byte in Sha256::digest(bytes) {
+        write!(out, "{byte:02x}").expect("formatting into a String cannot fail");
+    }
+    out
 }
 fn workflow_diagram(
     flows: &[(String, workflow::Workflow)],
@@ -216,4 +387,58 @@ fn workflow_diagram(
     combined.inventory.dedup();
     combined.validate()?;
     Ok(combined)
+}
+
+#[cfg(test)]
+mod future_profile_tests {
+    use super::*;
+    use workflow::future_profile::{Contract, FutureProfile, Operation, ProfileSource, Resolution};
+
+    #[test]
+    fn profile_refuses_stale_sources_and_misidentified_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let source = "fn forward() {}\nfn run(){forward();}\n";
+        std::fs::write(root.join("lib.rs"), source).unwrap();
+        let hash = sha256_hex(source.as_bytes());
+        let profile_path = root.join("profile.json");
+        let mut profile = FutureProfile {
+            schema: 1,
+            sources: vec![ProfileSource {
+                path: "lib.rs".into(),
+                sha256: hash,
+            }],
+            resolutions: vec![Resolution {
+                path: "lib.rs".into(),
+                line: 2,
+                column: 9,
+                spelling: "forward".into(),
+                definition: "lib.rs:1:3".into(),
+            }],
+            contracts: vec![Contract {
+                definition: "lib.rs:1:3".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "reviewed source".into(),
+            }],
+        };
+        let save = |profile: &FutureProfile| {
+            std::fs::write(&profile_path, serde_json::to_vec(profile).unwrap()).unwrap();
+        };
+        save(&profile);
+        assert!(load_future_profile(root, &profile_path).is_ok());
+        profile.resolutions[0].column = 8;
+        save(&profile);
+        assert!(load_future_profile(root, &profile_path).is_err());
+        profile.resolutions[0].column = 9;
+        profile.resolutions.push(profile.resolutions[0].clone());
+        save(&profile);
+        assert!(load_future_profile(root, &profile_path).is_err());
+        profile.resolutions.pop();
+        save(&profile);
+        std::fs::write(root.join("lib.rs"), format!("{source}// changed\n")).unwrap();
+        assert!(load_future_profile(root, &profile_path).is_err());
+        assert!(!token_matches("éforward", 1, "forward"));
+        assert!(!token_matches("forward_more", 0, "forward"));
+        assert!(!token_matches("otherforward", 5, "forward"));
+    }
 }

@@ -5,6 +5,140 @@ use std::collections::BTreeSet;
 use support::Fixture;
 
 #[test]
+fn profiled_future_custody_requires_forwarders_poll_and_unshadowed_values() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = "use std::future::Future; use std::task::{Context,Waker}; fn wrap<T>(v:T)->T{v} fn drive<F:Future>(f:F){let mut f=Box::pin(f);let w=Waker::noop();let mut cx=Context::from_waker(w);let _=f.as_mut().poll(&mut cx);} fn blocked()->bool{false} fn bridge<F:Future>(f:F){ if blocked(){return;} let f=wrap(f); drive(wrap(f)); } fn marker(){} pub fn entry(){let f=wrap(async {marker();});bridge(f);}";
+    let make = |text: &str, mode: &str| {
+        let fixture = Fixture::new(&[("src/lib.rs", text)]);
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+        let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+        let mut resolutions = Vec::new();
+        for (spelling, definition) in [("wrap", "fixture::wrap"), ("drive", "fixture::drive")] {
+            for (column, _) in text.match_indices(&format!("{spelling}(")) {
+                resolutions.push(Resolution {
+                    path: "src/lib.rs".into(),
+                    line: 1,
+                    column,
+                    spelling: spelling.into(),
+                    definition: definition.into(),
+                });
+            }
+        }
+        let mut profile = FutureProfile {
+            schema: 1,
+            sources: vec![],
+            resolutions,
+            contracts: vec![
+                Contract {
+                    definition: "fixture::wrap".into(),
+                    operation: Operation::ArgumentForward { argument: 0 },
+                    evidence: "written identity function".into(),
+                },
+                Contract {
+                    definition: "fixture::drive".into(),
+                    operation: Operation::PollArgument { argument: 0 },
+                    evidence: "written Future::poll".into(),
+                },
+            ],
+        };
+        match mode {
+            "missing-wrapper" => profile
+                .contracts
+                .retain(|contract| contract.definition != "fixture::wrap"),
+            "missing-poll" => profile
+                .contracts
+                .retain(|contract| contract.definition != "fixture::drive"),
+            "wrong-symbol" => profile
+                .resolutions
+                .iter_mut()
+                .filter(|resolution| resolution.spelling == "drive")
+                .for_each(|resolution| resolution.definition = "other::drive".into()),
+            "ambiguous" => {
+                let duplicate = profile.resolutions.first().unwrap().clone();
+                profile.resolutions.push(duplicate);
+            }
+            _ => {}
+        }
+        (
+            analysis
+                .expanded_with_future_profile(
+                    "src/lib.rs",
+                    "entry",
+                    2,
+                    workflow::Detail::Expressions,
+                    &profile,
+                )
+                .unwrap()
+                .1,
+            fixture,
+        )
+    };
+    let (diagram, fixture) = make(source, "valid");
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .expect("compile source fixture");
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let root = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label == "fn entry")
+        .unwrap();
+    let poll = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label.contains("poll forwarded future"))
+        .unwrap();
+    let body = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label.starts_with("[opaque] marker()"))
+        .unwrap();
+    let early = diagram.nodes.iter().find(|n| n.label == "return").unwrap();
+    assert!(reachable(&diagram, &root.id, &body.id));
+    assert!(!reachable_without(&diagram, &root.id, &body.id, &poll.id));
+    assert!(!reachable(&diagram, &early.id, &body.id));
+    for changed in [
+        source.replace("bridge(f);", "drop(f);"),
+        source.replace("let f=wrap(f);", "if blocked(){let f=();} let f=wrap(f);"),
+    ] {
+        let (diagram, _fixture) = make(&changed, "valid");
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|n| n.label.contains("poll forwarded future"))
+        );
+    }
+    for mode in [
+        "missing-wrapper",
+        "missing-poll",
+        "wrong-symbol",
+        "ambiguous",
+    ] {
+        let (diagram, _fixture) = make(source, mode);
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|n| n.label.contains("poll forwarded future")),
+            "{mode}"
+        );
+    }
+}
+
+#[test]
 fn builder_chain_uses_written_self_returns_and_preserves_uncertainty() {
     let library = "pub struct App; impl App { pub fn new()->Self{Self} pub fn first(self)->Self{self} pub fn second(self)->Self{self} pub fn third(self)->Self{self} pub fn run(self){} }";
     let entry = "mod library; use library::App; pub fn entry(){ let app=App::new().first().second(); app.third().run(); }";

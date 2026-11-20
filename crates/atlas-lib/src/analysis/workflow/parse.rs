@@ -91,6 +91,95 @@ pub(super) struct Reader<'a> {
     unindexed_calls: bool,
 }
 impl Reader<'_> {
+    pub(super) fn local_values(&self, block: &syn::Block) -> Vec<super::LocalValue> {
+        block
+            .stmts
+            .iter()
+            .filter_map(|stmt| {
+                let Stmt::Local(local) = stmt else {
+                    return None;
+                };
+                if !local.attrs.is_empty() {
+                    return None;
+                }
+                let syn::Pat::Ident(binding) = &local.pat else {
+                    return None;
+                };
+                if !binding.attrs.is_empty()
+                    || binding.by_ref.is_some()
+                    || binding.mutability.is_some()
+                    || binding.subpat.is_some()
+                {
+                    return None;
+                }
+                let init = local.init.as_ref()?;
+                if init.diverge.is_some() {
+                    return None;
+                }
+                let text = crate::source_text::text(self.source, init.expr.span());
+                (text.len() <= 8192).then(|| super::LocalValue {
+                    binding: binding.ident.to_string(),
+                    initializer: text,
+                    site: self.site(local.span()),
+                })
+            })
+            .collect()
+    }
+    /// Retain written async expressions without claiming their enclosing
+    /// initializer returns, forwards, or polls them.
+    pub(super) fn deferred_locals(&self, block: &syn::Block) -> Vec<super::DeferredLocal> {
+        fn nested<'a>(
+            reader: &Reader<'_>,
+            expr: &'a Expr,
+            wrappers: &mut Vec<super::DeferredWrapper>,
+        ) -> Option<&'a syn::ExprAsync> {
+            match expr {
+                Expr::Paren(inner) if inner.attrs.is_empty() => {
+                    nested(reader, &inner.expr, wrappers)
+                }
+                Expr::Group(inner) if inner.attrs.is_empty() => {
+                    nested(reader, &inner.expr, wrappers)
+                }
+                Expr::Async(future) if future.attrs.is_empty() => Some(future),
+                Expr::Call(call) if call.attrs.is_empty() && call.args.len() == 1 => {
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: reader.text(call.func.span()),
+                        site: reader.site(call.span()),
+                        is_method: false,
+                    });
+                    nested(reader, call.args.first()?, wrappers)
+                }
+                Expr::MethodCall(call) if call.attrs.is_empty() => {
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: call.method.to_string(),
+                        site: reader.site(call.span()),
+                        is_method: true,
+                    });
+                    nested(reader, &call.receiver, wrappers)
+                }
+                _ => None,
+            }
+        }
+        let mut out = Vec::new();
+        for stmt in &block.stmts {
+            let Stmt::Local(local) = stmt else { continue };
+            let syn::Pat::Ident(binding) = &local.pat else {
+                continue;
+            };
+            let Some(init) = &local.init else { continue };
+            let mut wrappers = Vec::new();
+            if let Some(future) = nested(self, &init.expr, &mut wrappers) {
+                out.push(super::DeferredLocal {
+                    binding: binding.ident.to_string(),
+                    initializer: self.site(init.expr.span()),
+                    future: self.site(future.span()),
+                    wrappers,
+                    body: self.deferred_block(&future.block),
+                });
+            }
+        }
+        out
+    }
     pub(super) fn returned_pinned_self_call(&self, block: &syn::Block) -> Option<Site> {
         let Stmt::Expr(Expr::Call(call), None) = block.stmts.last()? else {
             return None;
@@ -632,6 +721,51 @@ pub(super) fn direct_async(expr: &Expr) -> Option<&syn::ExprAsync> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_future_records_wrapper_syntax_without_polling_it() {
+        let flow = parse(
+            "fn f(){ let future = Box::pin(async { work(); }.instrument(span())); drop(future); }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        let [future] = flow.deferred_locals.as_slice() else {
+            panic!("expected one future")
+        };
+        assert_eq!(future.binding, "future");
+        assert_eq!(
+            future
+                .wrappers
+                .iter()
+                .map(|w| w.spelling.as_str())
+                .collect::<Vec<_>>(),
+            ["Box::pin", "instrument"]
+        );
+        assert!(
+            labels(&future.body)
+                .iter()
+                .any(|label| label.contains("work()"))
+        );
+        assert!(
+            !flow
+                .diagram()
+                .nodes
+                .iter()
+                .any(|node| node.label.starts_with("[opaque] work()"))
+        );
+    }
+
+    #[test]
+    fn local_future_refuses_ambiguous_or_closure_nested_shapes() {
+        let flow = parse(
+            "fn f(){ let both=combine(async { a() },async { b() }); let later=||async { c() }; }",
+            "lib.rs",
+            "f",
+        )
+        .unwrap();
+        assert!(flow.deferred_locals.is_empty());
+    }
 
     fn labels(steps: &[Step]) -> Vec<String> {
         steps
