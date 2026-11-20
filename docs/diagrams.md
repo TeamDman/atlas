@@ -307,6 +307,13 @@ contract. A directly awaited `self.field.method()` in that body may use the
 already witnessed concrete generic substitution and written trait bound; other
 dispatch alternatives remain unproved. Explicitly profiled expanded graphs
 have a 2,400-node pre-folding limit (ordinary expanded graphs retain 600).
+For a directly awaited synchronous call, an inline async block returned under
+declared forwarding wrappers is entered only at the subsequent poll. A
+uniquely written constructor returning `Self` can identify a receiver through
+a unique observed public re-export; unresolved or competing types remain
+opaque. A directly returned async self-method in an `impl Future` method is
+likewise opened only at the caller's poll. These are source candidates, not
+proof that a future runs or completes.
 `{"kind":"option-type"}` and
 `{"kind":"option-some"}` declare the standard optional container and its
 present-value variant. When both identities and a unary forwarding wrapper

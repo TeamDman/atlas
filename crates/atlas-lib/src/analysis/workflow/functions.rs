@@ -270,6 +270,7 @@ impl Reader<'_> {
             returned_self_call: self.returned_self_call(function.body),
             returned_guarded_future: self
                 .returned_guarded_future(function.body, function.signature),
+            returned_async_future: self.returned_async_future(function.body),
             callback_parameters: super::facts::callback_parameters(function.signature),
             deferred_locals: self.deferred_locals(function.body, function.signature),
             local_values: self.local_values(function.body),

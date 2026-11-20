@@ -486,6 +486,10 @@ impl<'a> Builder<'a> {
                         index.resolve_substituted_field(f, call, substitution)
                     })
                 })
+                .or_else(|| {
+                    let receiver = syn::parse_str::<syn::Expr>(call.receiver.as_deref()?).ok()?;
+                    matches!(receiver, syn::Expr::Call(_)).then(|| index.resolve(f, call))
+                })
         });
         if self.deferred_calls.is_some() && deferred_target.is_none() {
             return None;
@@ -756,6 +760,40 @@ impl<'a> Builder<'a> {
         } else {
             None
         };
+        let returned_async = if !async_target
+            && !implicit_await
+            && source_call.is_some_and(|call| call.directly_awaited)
+        {
+            self.future_profile.and_then(|profile| {
+                let value = index.functions()[j].flow.returned_async_future.clone()?;
+                if value.wrappers.iter().any(|wrapper| {
+                    let expected = if wrapper.is_method {
+                        super::future_profile::Operation::ReceiverForward
+                    } else {
+                        super::future_profile::Operation::ArgumentForward { argument: 0 }
+                    };
+                    !profile
+                        .operation(&wrapper.site, &wrapper.spelling)
+                        .is_some_and(|contract| contract.operation == expected)
+                }) {
+                    return None;
+                }
+                Some(value)
+            })
+        } else {
+            None
+        };
+        let returned_self_async = if !async_target
+            && !implicit_await
+            && self.depth >= 2
+            && source_call.is_some_and(|call| call.directly_awaited)
+        {
+            index
+                .returned_self_async_target(j)
+                .filter(|target| !self.stack.contains(target))
+        } else {
+            None
+        };
         let outer_deferred_calls = self.deferred_calls.take();
         let outer_receivers = std::mem::take(&mut self.deferred_receivers);
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
@@ -855,6 +893,53 @@ impl<'a> Builder<'a> {
             } else {
                 self.edge(&poll, &continuation, Some("if polling completes"));
             }
+        } else if let Some(value) = returned_async {
+            let poll = self.node(
+                "poll returned async block [source candidate; completion not guaranteed]",
+                &value.site,
+            );
+            self.edge(&exit, &poll, Some("if returned future is polled"));
+            let unpolled = self.node(
+                "returned future unpolled or interrupted [opaque]",
+                &value.site,
+            );
+            self.edge(&exit, &unpolled, Some("if unpolled or interrupted"));
+            let end = self.node(
+                "returned async block completes (value or residual)",
+                &value.site,
+            );
+            let old_exit = std::mem::replace(&mut self.exit, end.clone());
+            let old_loops = std::mem::take(&mut self.loops);
+            let old_group = std::mem::replace(&mut self.group, value.site.path.clone());
+            let old_function = self.function.replace(j);
+            let old_substitution = self.substitution.take();
+            let old_calls = self
+                .deferred_calls
+                .replace(value.awaited_constructor_methods);
+            let tails = self.steps(&value.body, vec![poll]);
+            self.connect(tails, &end);
+            self.deferred_calls = old_calls;
+            self.substitution = old_substitution;
+            self.function = old_function;
+            self.group = old_group;
+            self.loops = old_loops;
+            self.exit = old_exit;
+            self.edge(&end, &continuation, Some("if polling completes"));
+        } else if let Some(target) = returned_self_async {
+            let poll = self.node("poll returned async self-method future [source candidate; completion not guaranteed]", site);
+            let unpolled = self.node("returned future unpolled or interrupted [opaque]", site);
+            self.edge(&exit, &poll, Some("if returned future is polled"));
+            self.edge(&exit, &unpolled, Some("if unpolled or interrupted"));
+            let future_flow = index.functions()[target].flow.clone();
+            let old_calls = self.deferred_calls.take();
+            let old_receivers = std::mem::take(&mut self.deferred_receivers);
+            let old_substitution = self.substitution.take();
+            let (body, body_end) = self.function(&future_flow, Some(target), self.depth - 2);
+            self.substitution = old_substitution;
+            self.deferred_calls = old_calls;
+            self.deferred_receivers = old_receivers;
+            self.edge(&poll, &body, Some("if polled; source candidate"));
+            self.edge(&body_end, &continuation, Some("if polling completes"));
         } else {
             self.edge(
                 &exit,

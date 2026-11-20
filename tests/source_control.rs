@@ -3170,6 +3170,195 @@ fn nested_guarded_callbacks_preserve_concrete_request_and_conditional_polls() {
 }
 
 #[test]
+fn awaited_returned_async_and_self_future_reach_the_pagination_loop() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = include_str!("fixtures/returned_async_pagination.rs");
+    let fixture = Fixture::new(&[("src/lib.rs", source)]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let mut resolutions = vec![];
+    for (number, line) in source.lines().enumerate() {
+        for (needle, spelling) in [
+            ("Box::pin(async move { Helper::", "pin"),
+            ("Box::pin(Scope.outer(", "pin"),
+            ("Scope.outer(move", "outer"),
+            ("Scope.inner(move", "inner"),
+            ("}).instrument", "instrument"),
+        ] {
+            if line.contains(needle) {
+                resolutions.push(Resolution {
+                    path: "src/lib.rs".into(),
+                    line: number + 1,
+                    column: line.find(spelling).unwrap(),
+                    spelling: spelling.into(),
+                    definition: format!("fixture::{spelling}"),
+                });
+            }
+        }
+    }
+    let mut profile = FutureProfile {
+        schema: 1,
+        scope: vec![],
+        routes: vec![],
+        sources: vec![],
+        resolutions,
+        contracts: vec![
+            Contract {
+                definition: "fixture::pin".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "fixture pin".into(),
+            },
+            Contract {
+                definition: "fixture::instrument".into(),
+                operation: Operation::ReceiverForward,
+                evidence: "fixture instrumentation".into(),
+            },
+            Contract {
+                definition: "fixture::outer".into(),
+                operation: Operation::GuardedFactory {
+                    argument: 0,
+                    arity: 1,
+                },
+                evidence: "fixture admission and poll".into(),
+            },
+            Contract {
+                definition: "fixture::inner".into(),
+                operation: Operation::GuardedFactory {
+                    argument: 0,
+                    arity: 1,
+                },
+                evidence: "fixture admission and poll".into(),
+            },
+        ],
+    };
+    let generate = |profile: &FutureProfile| {
+        analysis
+            .expanded_with_future_profile(
+                "src/lib.rs",
+                "entry",
+                12,
+                workflow::Detail::Expressions,
+                profile,
+            )
+            .unwrap()
+            .1
+    };
+    let diagram = generate(&profile);
+    let root = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "fn entry")
+        .unwrap();
+    let pagination = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("while let Some(value)"))
+        .expect("pagination loop");
+    assert!(reachable(&diagram, &root.id, &pagination.id));
+    for label in [
+        "poll returned async block",
+        "poll returned async self-method future",
+    ] {
+        let poll = diagram
+            .nodes
+            .iter()
+            .find(|node| node.label.contains(label))
+            .expect(label);
+        assert!(!reachable_without(
+            &diagram,
+            &root.id,
+            &pagination.id,
+            &poll.id
+        ));
+    }
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Other::run")
+    );
+    let request_line = source
+        .lines()
+        .position(|line| line.contains("Box::pin(async move { Helper::"))
+        .unwrap()
+        + 1;
+    let complete = profile.clone();
+    profile
+        .resolutions
+        .retain(|resolution| !(resolution.spelling == "pin" && resolution.line == request_line));
+    let opaque = generate(&profile);
+    assert!(
+        !opaque
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Helper::collect_from")
+    );
+    fixture.write(
+        "src/lib.rs",
+        &source.replace("self.request.run().await", "self.request.run();"),
+    );
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let unpolled = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let diagram = unpolled
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            12,
+            workflow::Detail::Expressions,
+            &complete,
+        )
+        .unwrap()
+        .1;
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Helper::collect_from")
+    );
+    fixture.write(
+        "src/lib.rs",
+        &source.replace(
+            "{ self.collect_from() }",
+            "{ if done() { return self.collect_from(); } self.collect_from() }",
+        ),
+    );
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let alternate = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let diagram = alternate
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            12,
+            workflow::Detail::Expressions,
+            &complete,
+        )
+        .unwrap()
+        .1;
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Helper::collect_from")
+    );
+}
+
+#[test]
 fn returned_boxed_future_retains_an_explicit_poll_boundary() {
     let source = include_str!("fixtures/returned_future_flow.rs");
     let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 4);

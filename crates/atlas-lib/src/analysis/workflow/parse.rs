@@ -586,6 +586,102 @@ impl Reader<'_> {
             }
         }
     }
+    pub(super) fn returned_async_future(
+        &self,
+        block: &syn::Block,
+    ) -> Option<super::ReturnedAsyncFuture> {
+        if block.stmts.len() != 1 {
+            return None;
+        }
+        let Stmt::Expr(expression, None) = block.stmts.last()? else {
+            return None;
+        };
+        let mut expression = expression;
+        let mut wrappers = Vec::new();
+        loop {
+            match expression {
+                Expr::Call(call) if call.attrs.is_empty() && call.args.len() == 1 => {
+                    let Expr::Path(path) = &*call.func else {
+                        return None;
+                    };
+                    if path.qself.is_some() {
+                        return None;
+                    }
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: path.path.segments.last()?.ident.to_string(),
+                        site: self.site(call.span()),
+                        is_method: false,
+                    });
+                    expression = call.args.first()?;
+                }
+                Expr::MethodCall(call) if call.attrs.is_empty() => {
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: call.method.to_string(),
+                        site: self.site(call.span()),
+                        is_method: true,
+                    });
+                    expression = &call.receiver;
+                }
+                Expr::Async(body) if body.attrs.is_empty() => {
+                    struct Methods<'a, 'b> {
+                        reader: &'a Reader<'b>,
+                        calls: Vec<super::Call>,
+                    }
+                    impl<'ast> Visit<'ast> for Methods<'_, '_> {
+                        fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+                            if awaited.attrs.is_empty()
+                                && let Expr::MethodCall(method) = &*awaited.base
+                                && method.attrs.is_empty()
+                                && let Expr::Call(constructor) = &*method.receiver
+                                && constructor.attrs.is_empty()
+                                && matches!(&*constructor.func, Expr::Path(path) if path.attrs.is_empty() && path.qself.is_none())
+                            {
+                                let receiver = crate::source_text::text(
+                                    self.reader.source,
+                                    constructor.span(),
+                                );
+                                if receiver.len() <= 16_384 {
+                                    self.calls.push(super::Call {
+                                        spelling: method.method.to_string(),
+                                        receiver: Some(receiver),
+                                        arguments: method
+                                            .args
+                                            .iter()
+                                            .map(|arg| self.reader.text(arg.span()))
+                                            .collect(),
+                                        site: self.reader.site(awaited.span()),
+                                        awaited_block_call: false,
+                                        await_producer: None,
+                                        directly_awaited: true,
+                                        awaited_value: None,
+                                        awaited_arity: 0,
+                                        async_closures: vec![],
+                                    });
+                                }
+                            }
+                            syn::visit::visit_expr_await(self, awaited);
+                        }
+                        fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+                        fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+                        fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+                        fn visit_item(&mut self, _: &'ast syn::Item) {}
+                    }
+                    let mut methods = Methods {
+                        reader: self,
+                        calls: vec![],
+                    };
+                    methods.visit_block(&body.block);
+                    return Some(super::ReturnedAsyncFuture {
+                        wrappers,
+                        site: self.site(body.span()),
+                        body: self.deferred_block(&body.block),
+                        awaited_constructor_methods: methods.calls,
+                    });
+                }
+                _ => return None,
+            }
+        }
+    }
     pub(super) fn returned_pinned_self_call(&self, block: &syn::Block) -> Option<Site> {
         let Stmt::Expr(Expr::Call(call), None) = block.stmts.last()? else {
             return None;

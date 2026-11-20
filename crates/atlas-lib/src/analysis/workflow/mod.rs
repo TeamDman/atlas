@@ -320,6 +320,15 @@ pub struct ReturnedGuardedFuture {
     pub factory_spelling: String,
     pub closure: AsyncClosure,
 }
+/// A tail-returned inline async block under source-written wrappers.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ReturnedAsyncFuture {
+    pub wrappers: Vec<DeferredWrapper>,
+    pub site: Site,
+    pub body: Vec<Step>,
+    pub awaited_constructor_methods: Vec<Call>,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Binding {
@@ -361,6 +370,8 @@ pub struct Workflow {
     pub returned_self_call: Option<Site>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returned_guarded_future: Option<ReturnedGuardedFuture>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_async_future: Option<ReturnedAsyncFuture>,
     /// Callback parameters evidenced by written FnOnce bounds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_parameters: Vec<CallbackParameter>,

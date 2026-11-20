@@ -721,6 +721,36 @@ impl Index {
         }
         Some(target)
     }
+    /// A directly returned, uniquely written async self-method is a future
+    /// candidate. Its body may only be entered after the caller polls it.
+    pub(crate) fn returned_self_async_target(&self, function: usize) -> Option<usize> {
+        let f = self.functions.get(function)?;
+        let syn::Type::ImplTrait(output) = syn::parse_str::<syn::Type>(&f.flow.output).ok()? else {
+            return None;
+        };
+        if !output.bounds.iter().any(|bound| matches!(bound, syn::TypeParamBound::Trait(bound) if bound.path.segments.last().is_some_and(|segment| segment.ident == "Future"))) { return None; }
+        let site = f.flow.returned_self_call.as_ref()?;
+        let mut calls = f
+            .flow
+            .calls
+            .iter()
+            .filter(|call| &call.site == site && call.receiver.as_deref() == Some("self"));
+        let call = calls.next()?;
+        if calls.next().is_some() {
+            return None;
+        }
+        let Target::Function(target) = self.resolve(function, call) else {
+            return None;
+        };
+        let body = self.functions.get(target)?;
+        if !body.flow.async_function
+            || self.canonical(function, &["Self".into()])?
+                != self.canonical(target, &["Self".into()])?
+        {
+            return None;
+        }
+        Some(target)
+    }
     fn resolve_receiver(
         &self,
         function: usize,
@@ -791,7 +821,7 @@ impl Index {
                         };
                     }
                 }
-                syn::Expr::MethodCall(_) => {
+                syn::Expr::MethodCall(_) | syn::Expr::Call(_) => {
                     let mut guards = Vec::new();
                     if let Some(owner) =
                         self.builder_expression_owner(function, &expr, &call.site, 0, &mut guards)
@@ -980,8 +1010,20 @@ impl Index {
                     return None;
                 }
                 let name = self.canonical(function, &parts)?;
-                let Target::Function(target) = self.classify(&name) else {
-                    return None;
+                let target = if let Target::Function(target) = self.classify(&name) {
+                    target
+                } else {
+                    let (method, written_owner) = parts.split_last()?;
+                    let owner = self.struct_path(&self.canonical(function, written_owner)?)?;
+                    let mut resolved = owner.clone();
+                    resolved.push(method.clone());
+                    let Target::Function(target) = self.classify(&resolved) else {
+                        return None;
+                    };
+                    if self.canonical(target, &["Self".into()]).as_ref() != Some(&owner) {
+                        return None;
+                    }
+                    target
                 };
                 let body = self.functions.get(target)?;
                 if body.flow.output != "Self" {
