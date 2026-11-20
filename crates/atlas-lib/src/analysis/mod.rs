@@ -1,6 +1,7 @@
 //! Qualified analysis over one retained capture, with local lazy syntax caches.
 //! Index, representation observations and source control share these bytes.
 //! Test selection resets only this Analysis's workflow cache; Source stays shared.
+pub mod deferred_callback;
 pub mod index;
 pub mod representations;
 mod sources;
