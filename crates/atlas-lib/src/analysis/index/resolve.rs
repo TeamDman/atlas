@@ -1339,6 +1339,104 @@ impl Index {
             other => other,
         }
     }
+
+    /// Follow a source-bound optional field into its simple present-value arm.
+    pub(crate) fn optional_match_method(
+        &self,
+        caller: usize,
+        call: &Call,
+        profile: &crate::analysis::workflow::future_profile::FutureProfile,
+    ) -> Option<Target> {
+        use crate::analysis::workflow::future_profile::Operation;
+        let function = self.functions.get(caller)?;
+        let receiver = call.receiver.as_deref()?;
+        let bindings: Vec<_> = function
+            .flow
+            .optional_match_bindings
+            .iter()
+            .filter(|binding| binding.binding == receiver && binding.arm.contains(&call.site))
+            .collect();
+        let [binding] = bindings.as_slice() else {
+            return None;
+        };
+        if function
+            .flow
+            .bindings
+            .iter()
+            .filter(|item| item.name == receiver)
+            .count()
+            != 1
+        {
+            return None;
+        }
+        if profile.operation(&binding.pattern, "Some")?.operation != Operation::OptionSome {
+            return None;
+        }
+        let owner = self.struct_path(&self.canonical(caller, &["Self".into()])?)?;
+        let [shape] = self.structs.get(&owner)?.as_slice() else {
+            return None;
+        };
+        if shape.ambiguous_fields.contains(&binding.field) {
+            return None;
+        }
+        let field = shape.optional_fields.get(&binding.field)?;
+        if profile.operation(&field.option_site, "Option")?.operation != Operation::OptionType {
+            return None;
+        }
+        let payload = self.in_scope(&shape.scope, &shape.imports, &field.payload)?;
+        let payload = self.enum_path(&payload)?;
+        let mut method = payload.clone();
+        method.push(call.spelling.clone());
+        let Target::Function(index) = self.classify(&method) else {
+            return None;
+        };
+        if !self.functions[index].inherent
+            || self.canonical(index, &["Self".into()]).as_ref() != Some(&payload)
+        {
+            return None;
+        }
+        Some(Target::Candidate(
+            index,
+            format!(
+                "{receiver} is the present value of a source-profiled optional field, with candidate owner {}; source candidate, not compiler proof",
+                payload.join("::")
+            ),
+        ))
+    }
+
+    fn enum_path(&self, path: &[String]) -> Option<Vec<String>> {
+        if let Some(shapes) = self.enums.get(path) {
+            let [shape] = shapes.as_slice() else {
+                return None;
+            };
+            return shape.supported.then(|| path.to_vec());
+        }
+        let (name, parent) = path.split_last()?;
+        let mut star = parent.to_vec();
+        star.push("*".into());
+        let mut found = BTreeSet::new();
+        for module in self.exports.get(&star)? {
+            let mut candidate = self.exported(module)?;
+            if !self
+                .scopes
+                .values()
+                .flatten()
+                .any(|scope| scope == &candidate)
+            {
+                return None;
+            }
+            candidate.push(name.clone());
+            if let Some(shapes) = self.enums.get(&candidate) {
+                let [shape] = shapes.as_slice() else {
+                    return None;
+                };
+                if shape.public && shape.supported {
+                    found.insert(candidate);
+                }
+            }
+        }
+        (found.len() == 1).then(|| found.pop_first()).flatten()
+    }
 }
 
 fn is_standard_future_trait(

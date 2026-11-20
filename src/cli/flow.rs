@@ -404,6 +404,7 @@ mod future_profile_tests {
         let profile_path = root.join("profile.json");
         let mut profile = FutureProfile {
             schema: 1,
+            routes: vec![],
             scope: vec![],
             sources: vec![ProfileSource {
                 path: "lib.rs".into(),

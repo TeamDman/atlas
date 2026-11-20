@@ -49,11 +49,46 @@ pub(super) fn expanded_with_profile(
                     .collect::<Result<_>>()?,
             );
         }
+        for route in &profile.routes {
+            let function = index.select(&route.path, &route.function)?;
+            let matches: Vec<_> = index.functions()[function]
+                .flow
+                .steps
+                .iter()
+                .filter_map(|step| match step {
+                    Step::Match { site, arms, .. } if site.line == route.line => Some(arms),
+                    _ => None,
+                })
+                .collect();
+            let [arms] = matches.as_slice() else {
+                return Err("profile route must identify one top-level match".into());
+            };
+            if arms
+                .iter()
+                .filter(|arm| arm.pattern == route.pattern)
+                .count()
+                != 1
+            {
+                return Err("profile route must identify one match arm".into());
+            }
+            if b.routes
+                .insert((function, route.line), route.pattern.clone())
+                .is_some()
+            {
+                return Err("duplicate profile route".into());
+            }
+        }
         b.declared.push("Future-wrapper contracts and call-token resolutions below are supplied input, not compiler proof or an execution trace; execution remains conditional on reaching and polling the value.".into());
         b.declared.extend(profile.scope.iter().map(|selector| {
             format!(
                 "Profile expansion scope {} :: {}",
                 selector.path, selector.function
+            )
+        }));
+        b.declared.extend(profile.routes.iter().map(|route| {
+            format!(
+                "Profile match selection {} :: {} at line {}: {}; other arms remain opaque",
+                route.path, route.function, route.line, route.pattern
             )
         }));
         b.declared.extend(profile.contracts.iter().map(|contract| {
@@ -105,6 +140,7 @@ struct Builder<'a> {
     future_profile: Option<&'a super::future_profile::FutureProfile>,
     future_values: std::collections::BTreeMap<String, super::future_custody::FutureValue>,
     scope: Option<std::collections::BTreeSet<usize>>,
+    routes: std::collections::BTreeMap<(usize, usize), String>,
     guarded_factories: Vec<super::GuardedFactory>,
     deferred_receivers: std::collections::BTreeMap<String, Vec<String>>,
 }
@@ -147,6 +183,7 @@ impl<'a> Builder<'a> {
             future_profile: None,
             future_values: std::collections::BTreeMap::new(),
             scope: None,
+            routes: std::collections::BTreeMap::new(),
             guarded_factories: Vec::new(),
             deferred_receivers: std::collections::BTreeMap::new(),
         }
@@ -292,13 +329,39 @@ impl<'a> Builder<'a> {
     fn call(&mut self, id: &str, site: &Site) -> Option<String> {
         let index = self.index?;
         let f = self.function?;
-        let source_call = self
-            .deferred_calls
-            .as_deref()
-            .unwrap_or(&index.functions()[f].flow.calls)
-            .iter()
-            .find(|call| &call.site == site)
-            .cloned();
+        let wrapped = if self.deferred_calls.is_none() {
+            self.future_profile.and_then(|profile| {
+                let candidates: Vec<_> = index.functions()[f]
+                    .flow
+                    .wrapped_awaits
+                    .iter()
+                    .filter(|value| value.call.site == *site)
+                    .collect();
+                let [value] = candidates.as_slice() else {
+                    return None;
+                };
+                if profile
+                    .operation(&value.wrapper_site, &value.wrapper)?
+                    .operation
+                    != (super::future_profile::Operation::ArgumentForward { argument: 0 })
+                {
+                    return None;
+                }
+                index
+                    .optional_match_method(f, &value.call, profile)
+                    .map(|target| (value.call.clone(), target))
+            })
+        } else {
+            None
+        };
+        let source_call = wrapped.as_ref().map(|(call, _)| call.clone()).or_else(|| {
+            self.deferred_calls
+                .as_deref()
+                .unwrap_or(&index.functions()[f].flow.calls)
+                .iter()
+                .find(|call| &call.site == site)
+                .cloned()
+        });
         let source_call = source_call.as_ref();
         if let Some(profile) = self.future_profile
             && let Some(factory) = self
@@ -469,15 +532,18 @@ impl<'a> Builder<'a> {
             .calls
             .iter()
             .any(|call| &call.site == site && call.await_producer.is_some());
-        let target = deferred_target.or_else(|| {
-            self.substitution
-                .as_ref()
-                .and_then(|substitution| {
-                    source_call
-                        .and_then(|call| index.resolve_substituted_field(f, call, substitution))
-                })
-                .or_else(|| self.targets.get(&(f, site.clone())).cloned())
-        })?;
+        let target = wrapped
+            .map(|(_, target)| target)
+            .or(deferred_target)
+            .or_else(|| {
+                self.substitution
+                    .as_ref()
+                    .and_then(|substitution| {
+                        source_call
+                            .and_then(|call| index.resolve_substituted_field(f, call, substitution))
+                    })
+                    .or_else(|| self.targets.get(&(f, site.clone())).cloned())
+            })?;
         let (target, reason, candidate) = match target {
             Target::Function(j) if self.stack.contains(&j) => {
                 (None, "recursion boundary".into(), false)
@@ -756,18 +822,19 @@ impl<'a> Builder<'a> {
                     ends
                 }
                 Step::Match { arms, site, .. } => {
-                    let mut pending = vec![id];
-                    let mut ends = vec![];
-                    for arm in arms {
-                        if self.exhausted {
-                            break;
-                        }
+                    let selected = self
+                        .function
+                        .and_then(|function| self.routes.get(&(function, site.line)))
+                        .cloned();
+                    if let Some(selected) = selected {
+                        let arm = arms
+                            .iter()
+                            .find(|arm| arm.pattern == selected)
+                            .expect("validated route arm");
+                        let other = self.node("other match arms [opaque; continue only if an omitted arm returns normally]", site);
+                        self.edge(&id, &other, Some("other alternatives"));
                         let pattern = self.node(&format!("pattern: {}", arm.pattern), site);
-                        self.connect(pending, &pattern);
-                        let next = self.node("try next pattern", site);
-                        if arm.pattern != "_" {
-                            self.edge(&pattern, &next, Some("does not match"));
-                        }
+                        self.edge(&id, &pattern, Some("selected route"));
                         let body_gate = self.node("matched arm body", site);
                         if arm.guard.is_empty() {
                             self.edge(&pattern, &body_gate, Some("matches"));
@@ -778,14 +845,44 @@ impl<'a> Builder<'a> {
                             let result = self.node("guard result", site);
                             self.connect(guards, &result);
                             self.edge(&result, &body_gate, Some("true"));
-                            self.edge(&result, &next, Some("false"));
+                            self.edge(&result, &other, Some("false; other alternatives"));
                         }
-                        ends.extend(self.steps(&arm.body, vec![body_gate]));
-                        pending = vec![next];
+                        let mut ends = self.steps(&arm.body, vec![body_gate]);
+                        ends.push(other);
+                        ends
+                    } else {
+                        let mut pending = vec![id];
+                        let mut ends = vec![];
+                        for arm in arms {
+                            if self.exhausted {
+                                break;
+                            }
+                            let pattern = self.node(&format!("pattern: {}", arm.pattern), site);
+                            self.connect(pending, &pattern);
+                            let next = self.node("try next pattern", site);
+                            if arm.pattern != "_" {
+                                self.edge(&pattern, &next, Some("does not match"));
+                            }
+                            let body_gate = self.node("matched arm body", site);
+                            if arm.guard.is_empty() {
+                                self.edge(&pattern, &body_gate, Some("matches"));
+                            } else {
+                                let guard = self.node("pattern matches: evaluate guard", site);
+                                self.edge(&pattern, &guard, Some("matches"));
+                                let guards = self.steps(&arm.guard, vec![guard]);
+                                let result = self.node("guard result", site);
+                                self.connect(guards, &result);
+                                self.edge(&result, &body_gate, Some("true"));
+                                self.edge(&result, &next, Some("false"));
+                            }
+                            ends.extend(self.steps(&arm.body, vec![body_gate]));
+                            pending = vec![next];
+                        }
+                        let unmatched =
+                            self.node("match coverage not checked (no fallthrough)", site);
+                        self.connect(pending, &unmatched);
+                        ends
                     }
-                    let unmatched = self.node("match coverage not checked (no fallthrough)", site);
-                    self.connect(pending, &unmatched);
-                    ends
                 }
                 Step::Loop {
                     head,

@@ -3,7 +3,7 @@ use super::functions::collect;
 use super::{Arm, Site, Step, Workflow};
 use crate::Result;
 use proc_macro2::Span;
-use syn::{Expr, Stmt, spanned::Spanned};
+use syn::{Expr, Stmt, spanned::Spanned, visit::Visit};
 
 #[cfg(test)]
 pub(super) fn parse(source: &str, path: &str, selector: &str) -> Result<Workflow> {
@@ -91,6 +91,123 @@ pub(super) struct Reader<'a> {
     unindexed_calls: bool,
 }
 impl Reader<'_> {
+    pub(super) fn optional_match_bindings(
+        &self,
+        block: &syn::Block,
+    ) -> Vec<super::OptionalMatchBinding> {
+        struct Collector<'a, 'b> {
+            reader: &'a Reader<'b>,
+            bindings: Vec<super::OptionalMatchBinding>,
+        }
+        impl<'ast> Visit<'ast> for Collector<'_, '_> {
+            fn visit_expr_match(&mut self, expr: &'ast syn::ExprMatch) {
+                if expr.attrs.is_empty()
+                    && let Expr::Field(field) = &*expr.expr
+                    && field.attrs.is_empty()
+                    && matches!(&*field.base, Expr::Path(path) if path.qself.is_none() && path.path.is_ident("self"))
+                    && let syn::Member::Named(field_name) = &field.member
+                {
+                    for arm in &expr.arms {
+                        if !arm.attrs.is_empty() {
+                            continue;
+                        }
+                        let syn::Pat::TupleStruct(pattern) = &arm.pat else {
+                            continue;
+                        };
+                        if !pattern.attrs.is_empty()
+                            || pattern.qself.is_some()
+                            || !pattern.path.is_ident("Some")
+                        {
+                            continue;
+                        }
+                        let [syn::Pat::Ident(binding)] =
+                            pattern.elems.iter().collect::<Vec<_>>().as_slice()
+                        else {
+                            continue;
+                        };
+                        if !binding.attrs.is_empty()
+                            || binding.by_ref.is_some()
+                            || binding.mutability.is_some()
+                            || binding.subpat.is_some()
+                        {
+                            continue;
+                        }
+                        self.bindings.push(super::OptionalMatchBinding {
+                            binding: binding.ident.to_string(),
+                            field: field_name.to_string(),
+                            pattern: self.reader.site(pattern.path.span()),
+                            arm: self.reader.site(arm.span()),
+                        });
+                    }
+                }
+                syn::visit::visit_expr_match(self, expr);
+            }
+            fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+            fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+            fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+            fn visit_item(&mut self, _: &'ast syn::Item) {}
+        }
+        let mut collector = Collector {
+            reader: self,
+            bindings: Vec::new(),
+        };
+        collector.visit_block(block);
+        collector.bindings
+    }
+    pub(super) fn wrapped_awaits(&self, block: &syn::Block) -> Vec<super::WrappedAwait> {
+        struct Collector<'a, 'b> {
+            reader: &'a Reader<'b>,
+            values: Vec<super::WrappedAwait>,
+        }
+        impl<'ast> Visit<'ast> for Collector<'_, '_> {
+            fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+                if awaited.attrs.is_empty()
+                    && let Expr::Call(wrapper) = &*awaited.base
+                    && wrapper.attrs.is_empty()
+                    && wrapper.args.len() == 1
+                    && let Expr::Path(function) = &*wrapper.func
+                    && function.qself.is_none()
+                    && let Some(Expr::MethodCall(method)) = wrapper.args.first()
+                    && method.attrs.is_empty()
+                    && let Expr::Path(receiver) = &*method.receiver
+                    && receiver.qself.is_none()
+                    && let Some(receiver) = receiver.path.get_ident()
+                {
+                    self.values.push(super::WrappedAwait {
+                        wrapper: self.reader.text(function.span()),
+                        wrapper_site: self.reader.site(wrapper.span()),
+                        call: super::Call {
+                            spelling: method.method.to_string(),
+                            receiver: Some(receiver.to_string()),
+                            arguments: method
+                                .args
+                                .iter()
+                                .map(|arg| self.reader.text(arg.span()))
+                                .collect(),
+                            site: self.reader.site(awaited.span()),
+                            awaited_block_call: false,
+                            await_producer: None,
+                            directly_awaited: true,
+                            awaited_value: None,
+                            awaited_arity: 0,
+                            async_closures: vec![],
+                        },
+                    });
+                }
+                syn::visit::visit_expr_await(self, awaited);
+            }
+            fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+            fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+            fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+            fn visit_item(&mut self, _: &'ast syn::Item) {}
+        }
+        let mut collector = Collector {
+            reader: self,
+            values: Vec::new(),
+        };
+        collector.visit_block(block);
+        collector.values
+    }
     pub(super) fn local_values(&self, block: &syn::Block) -> Vec<super::LocalValue> {
         block
             .stmts

@@ -12,6 +12,9 @@ pub struct FutureProfile {
     /// Optional presentation cut points: only these function bodies expand.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scope: Vec<FunctionSelector>,
+    /// Optional top-level match arms retained for presentation; no edges added.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routes: Vec<MatchSelection>,
     pub sources: Vec<ProfileSource>,
     pub resolutions: Vec<Resolution>,
     pub contracts: Vec<Contract>,
@@ -22,6 +25,15 @@ pub struct FutureProfile {
 pub struct FunctionSelector {
     pub path: String,
     pub function: String,
+}
+/// A written top-level match and one of its exact arm patterns.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MatchSelection {
+    pub path: String,
+    pub function: String,
+    pub line: usize,
+    pub pattern: String,
 }
 /// Exact source bytes required by the profile's author.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,9 +74,13 @@ pub enum Operation {
     /// Polling may first admit and invoke the factory argument; only after a
     /// second cancellation check may its returned future be polled.
     GuardedFactory { argument: usize, arity: usize },
+    /// Declares the standard optional container type's identity.
+    OptionType,
+    /// Declares the corresponding optional container's present-value variant.
+    OptionSome,
 }
 impl FutureProfile {
-    pub(super) fn operation(&self, site: &Site, spelling: &str) -> Option<&Contract> {
+    pub(in crate::analysis) fn operation(&self, site: &Site, spelling: &str) -> Option<&Contract> {
         if self.schema != 1 {
             return None;
         }

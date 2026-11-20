@@ -278,6 +278,23 @@ pub struct LocalValue {
     pub initializer: String,
     pub site: Site,
 }
+/// A written `Some(binding)` arm on a direct `self.field` match.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OptionalMatchBinding {
+    pub binding: String,
+    pub field: String,
+    pub pattern: Site,
+    pub arm: Site,
+}
+/// A directly awaited one-argument wrapper around a method call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct WrappedAwait {
+    pub wrapper: String,
+    pub wrapper_site: Site,
+    pub call: Call,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Binding {
@@ -324,6 +341,10 @@ pub struct Workflow {
     /// Local initializer syntax retained for opt-in value-custody analysis.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub local_values: Vec<LocalValue>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional_match_bindings: Vec<OptionalMatchBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub wrapped_awaits: Vec<WrappedAwait>,
     pub site: Site,
     pub steps: Vec<Step>,
     pub calls: Vec<Call>,

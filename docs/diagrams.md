@@ -294,8 +294,13 @@ only after a cancellation check. Atlas recognizes a narrow source form: a
 local async closure, a two-arm conditional selecting two such factory calls,
 and an immediately following tail await. Both branches need matching contracts;
 admission rejection, cancellation before poll, and no poll stay explicit
-opaque alternatives. Argument indices exclude the
-method receiver. Build these observations from independently reviewed source
+opaque alternatives. `{"kind":"option-type"}` and
+`{"kind":"option-some"}` declare the standard optional container and its
+present-value variant. When both identities and a unary forwarding wrapper
+are source-bound, Atlas can use an unshadowed `Some(binding)` arm on a direct
+`self.field` match to identify a unique written enum payload method as a
+candidate, entering its async body only if the wrapped future is polled.
+Argument indices exclude the method receiver. Build these observations from independently reviewed source
 or compiler output; a hash binds the supplied assertion to bytes, not to its
 correctness. Call and definition columns must have ASCII prefixes so the
 source and external token coordinate systems agree. The profile is protected
@@ -304,6 +309,11 @@ An optional `scope` array of `{ "path": "...", "function": "..." }`
 selects existing bodies to expand; other calls remain visible cut points.
 Scope changes presentation only and does not introduce call edges. Each
 selector must resolve uniquely in the captured workspace.
+An optional `routes` array selects an exact written arm of a top-level match
+using `{ "path": "...", "function": "...", "line": 1, "pattern": "..." }`.
+Atlas validates the match and arm in the captured source. Other arms remain an
+explicit opaque alternative, whose normal continuation is conditional. Route
+selection changes presentation only and does not introduce call edges.
 
 For a bounded builder chain, a unique written constructor returning `Self`
 and unique inherent methods returning `Self` can supply a receiver source

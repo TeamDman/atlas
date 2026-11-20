@@ -5,6 +5,135 @@ use std::collections::BTreeSet;
 use support::Fixture;
 
 #[test]
+fn profiled_optional_match_and_awaited_wrapper_select_concrete_enum() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = "enum Command{Run}enum Other{Run}impl Command{async fn invoke(self){}}impl Other{async fn invoke(self){}}struct Cli{command:Option<Command>}impl Cli{async fn invoke(self){match self.command{Some(cmd)=>Box::pin(cmd.invoke()).await,None=>()}}}pub async fn entry(){Cli{command:Some(Command::Run)}.invoke().await;}";
+    let make = |text: &str, missing: &str| {
+        let fixture = Fixture::new(&[("src/lib.rs", text)]);
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+        let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+        let resolutions = [
+            ("Option", "Option<", "fixture::option"),
+            ("Some", "Some(cmd)", "fixture::some"),
+            ("pin", "pin(", "fixture::pin"),
+        ]
+        .iter()
+        .map(|(spelling, needle, definition)| Resolution {
+            path: "src/lib.rs".into(),
+            line: 1,
+            column: text.find(needle).unwrap(),
+            spelling: (*spelling).into(),
+            definition: (*definition).into(),
+        })
+        .collect();
+        let contracts = [
+            ("fixture::option", Operation::OptionType),
+            ("fixture::some", Operation::OptionSome),
+            ("fixture::pin", Operation::ArgumentForward { argument: 0 }),
+        ]
+        .into_iter()
+        .filter(|(definition, _)| *definition != missing)
+        .map(|(definition, operation)| Contract {
+            definition: definition.into(),
+            operation,
+            evidence: "declared source witness".into(),
+        })
+        .collect();
+        let profile = FutureProfile {
+            schema: 1,
+            routes: vec![],
+            scope: vec![],
+            sources: vec![],
+            resolutions,
+            contracts,
+        };
+        (
+            analysis
+                .expanded_with_future_profile(
+                    "src/lib.rs",
+                    "entry",
+                    2,
+                    workflow::Detail::Expressions,
+                    &profile,
+                )
+                .unwrap()
+                .1,
+            fixture,
+        )
+    };
+    let (diagram, fixture) = make(source, "");
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Command::invoke")
+    );
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Other::invoke")
+    );
+    let other = source
+        .replace("Option<Command>", "Option<Other>")
+        .replace("Some(Command::Run)", "Some(Other::Run)");
+    let (diagram, _fixture) = make(&other, "");
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Other::invoke")
+    );
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Command::invoke")
+    );
+    for missing in ["fixture::option", "fixture::some", "fixture::pin"] {
+        let (diagram, _fixture) = make(source, missing);
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|node| node.label == "fn Command::invoke")
+        );
+    }
+    for changed in [
+        source.replace("Some(cmd)=>", "Some(cmd) if true=>"),
+        source.replace(
+            "Some(cmd)=>Box::pin(cmd.invoke()).await",
+            "Some(cmd)=>{let cmd=Other::Run;Box::pin(cmd.invoke()).await}",
+        ),
+        source.replace("Box::pin(cmd.invoke()).await", "Box::pin(cmd.invoke())"),
+    ] {
+        let (diagram, _fixture) = make(&changed, "");
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|node| node.label == "fn Command::invoke" || node.label == "fn Other::invoke")
+        );
+    }
+}
+
+#[test]
 fn callback_receiver_uses_concrete_written_generic_argument_type() {
     let source = "use std::future::Future; struct A; struct B; impl A{async fn run(self){}} impl B{async fn run(self){}} async fn invoke<C,F,T>(c:C,f:F) where F:FnOnce(C)->T,T:Future<Output=()>{f(c).await} pub async fn entry(){let value:A=A;invoke(value,|cli|async move{cli.run().await}).await;}";
     let (fixture, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
@@ -117,6 +246,7 @@ fn declared_expansion_scope_only_cuts_existing_calls() {
     let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
     let mut profile = FutureProfile {
         schema: 1,
+        routes: vec![],
         scope: vec![FunctionSelector {
             path: "src/lib.rs".into(),
             function: "child".into(),
@@ -149,6 +279,65 @@ fn declared_expansion_scope_only_cuts_existing_calls() {
             .any(|n| n.label.contains("profile cut point"))
     );
     profile.scope[0].function = "missing".into();
+    assert!(
+        analysis
+            .expanded_with_future_profile(
+                "src/lib.rs",
+                "entry",
+                3,
+                workflow::Detail::Expressions,
+                &profile
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn profile_route_selects_an_existing_arm_and_preserves_other_alternatives() {
+    use cargo_atlas::workflow::future_profile::{FutureProfile, MatchSelection};
+    let fixture = Fixture::new(&[(
+        "src/lib.rs",
+        "fn hit(){}fn miss(){}fn choose(x:bool){match x{true=>hit(),false=>miss()}}pub fn entry(){choose(true);}",
+    )]);
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let mut profile = FutureProfile {
+        schema: 1,
+        scope: vec![],
+        routes: vec![MatchSelection {
+            path: "src/lib.rs".into(),
+            function: "choose".into(),
+            line: 1,
+            pattern: "true".into(),
+        }],
+        sources: vec![],
+        resolutions: vec![],
+        contracts: vec![],
+    };
+    let diagram = analysis
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            3,
+            workflow::Detail::Expressions,
+            &profile,
+        )
+        .unwrap()
+        .1;
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn hit"));
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn miss"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("other match arms [opaque"))
+    );
+    profile.routes[0].pattern = "not an arm".into();
     assert!(
         analysis
             .expanded_with_future_profile(
@@ -220,6 +409,7 @@ fn profiled_factory_requires_admission_and_a_later_future_poll() {
         }
         let profile = FutureProfile {
             schema: 1,
+            routes: vec![],
             scope: vec![],
             sources: vec![],
             resolutions,
@@ -340,6 +530,7 @@ fn profiled_future_custody_requires_forwarders_poll_and_unshadowed_values() {
         }
         let mut profile = FutureProfile {
             schema: 1,
+            routes: vec![],
             scope: vec![],
             sources: vec![],
             resolutions,

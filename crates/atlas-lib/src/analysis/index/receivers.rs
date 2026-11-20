@@ -19,11 +19,22 @@ pub(super) struct StructShape {
     pub scope: Vec<String>,
     pub imports: BTreeMap<String, Vec<Vec<String>>>,
     pub fields: BTreeMap<String, Vec<String>>,
+    pub optional_fields: BTreeMap<String, OptionalField>,
     pub ambiguous_fields: BTreeSet<String>,
     /// One written generic parameter, with optional lifetimes but no consts.
     pub generic_parameter: Option<String>,
     pub supported: bool,
     pub public: bool,
+}
+#[derive(Clone)]
+pub(super) struct OptionalField {
+    pub payload: Vec<String>,
+    pub option_site: Site,
+}
+#[derive(Clone)]
+pub(super) struct EnumShape {
+    pub public: bool,
+    pub supported: bool,
 }
 
 #[derive(Clone)]
@@ -60,6 +71,7 @@ pub(super) struct FutureBounds {
 #[derive(Default)]
 pub(in crate::analysis) struct ReceiverFacts {
     structs: BTreeMap<Vec<String>, Vec<StructShape>>,
+    enums: BTreeMap<Vec<String>, Vec<EnumShape>>,
     inherent: BTreeSet<Site>,
     generic_inherent: BTreeSet<Site>,
     generic_owner_inherent: BTreeSet<Site>,
@@ -82,6 +94,7 @@ pub(in crate::analysis) fn read(
         file,
         source.text(),
         &mut facts.structs,
+        &mut facts.enums,
         &mut facts.inherent,
         &mut facts.generic_inherent,
         &mut facts.generic_owner_inherent,
@@ -244,6 +257,7 @@ fn collect(
     file: &str,
     source: &str,
     structs: &mut BTreeMap<Vec<String>, Vec<StructShape>>,
+    enums: &mut BTreeMap<Vec<String>, Vec<EnumShape>>,
     inherent: &mut BTreeSet<Site>,
     generic_inherent: &mut BTreeSet<Site>,
     generic_owner_inherent: &mut BTreeSet<Site>,
@@ -268,6 +282,7 @@ fn collect(
                         file,
                         source,
                         structs,
+                        enums,
                         inherent,
                         generic_inherent,
                         generic_owner_inherent,
@@ -277,8 +292,19 @@ fn collect(
                     );
                 }
             }
+            Item::Enum(item) => {
+                let mut key = scope.to_vec();
+                key.push(item.ident.to_string());
+                enums.entry(key).or_default().push(EnumShape {
+                    public: matches!(item.vis, syn::Visibility::Public(_)),
+                    supported: item.generics.params.is_empty()
+                        && item.generics.where_clause.is_none()
+                        && !conditional(&item.attrs),
+                });
+            }
             Item::Struct(s) => {
                 let mut fields = BTreeMap::new();
+                let mut optional_fields = BTreeMap::new();
                 let mut ambiguous_fields = BTreeSet::new();
                 for field in &s.fields {
                     if conditional(&field.attrs) {
@@ -290,6 +316,34 @@ fn collect(
                     let (Some(name), syn::Type::Path(ty)) = (&field.ident, &field.ty) else {
                         continue;
                     };
+                    if ty.qself.is_none()
+                        && ty.path.segments.len() == 1
+                        && let Some(segment) = ty.path.segments.first()
+                        && segment.ident == "Option"
+                        && let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments
+                        && let [syn::GenericArgument::Type(syn::Type::Path(payload))] =
+                            arguments.args.iter().collect::<Vec<_>>().as_slice()
+                        && payload.qself.is_none()
+                        && payload
+                            .path
+                            .segments
+                            .iter()
+                            .all(|part| matches!(part.arguments, syn::PathArguments::None))
+                    {
+                        let entry = OptionalField {
+                            payload: payload
+                                .path
+                                .segments
+                                .iter()
+                                .map(|part| part.ident.to_string())
+                                .collect(),
+                            option_site: Site::at(file, segment.ident.span()),
+                        };
+                        if optional_fields.insert(name.to_string(), entry).is_some() {
+                            ambiguous_fields.insert(name.to_string());
+                        }
+                        continue;
+                    }
                     if ty.qself.is_some()
                         || ty
                             .path
@@ -330,6 +384,7 @@ fn collect(
                     scope: scope.to_vec(),
                     imports: imports.clone(),
                     fields,
+                    optional_fields,
                     ambiguous_fields,
                     generic_parameter,
                     supported: s.generics.params.is_empty()
@@ -541,6 +596,13 @@ impl Index {
                         shape
                     });
                     self.structs.entry(key).or_default().extend(shapes);
+                }
+                for (path, shapes) in &facts.enums {
+                    let key = scope.iter().chain(path).cloned().collect();
+                    self.enums
+                        .entry(key)
+                        .or_default()
+                        .extend(shapes.iter().cloned());
                 }
                 self.inherent_sites.extend(facts.inherent.iter().cloned());
                 self.generic_inherent_sites
