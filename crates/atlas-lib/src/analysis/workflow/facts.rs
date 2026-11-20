@@ -212,6 +212,7 @@ fn async_closures(
                 parameters: &'a [String],
                 shadows: &'a BTreeSet<String>,
                 calls: Vec<Call>,
+                self_fields: Vec<Call>,
             }
             impl<'ast> Visit<'ast> for AwaitedMethods<'_, '_> {
                 fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
@@ -240,6 +241,21 @@ fn async_closures(
                             async_closures: vec![],
                         });
                     }
+                    if let Expr::MethodCall(method) = &*awaited.base
+                        && let Expr::Field(field) = &*method.receiver
+                        && field.attrs.is_empty()
+                        && matches!(&*field.base, Expr::Path(path) if path.attrs.is_empty() && path.qself.is_none() && path.path.is_ident("self"))
+                        && method.attrs.is_empty()
+                    {
+                        self.self_fields.push(Call {
+                            spelling: method.method.to_string(),
+                            receiver: Some(self.reader.text(field.span())),
+                            arguments: method.args.iter().map(|arg| self.reader.text(arg.span())).collect(),
+                            site: self.reader.site(awaited.span()),
+                            awaited_block_call: false, await_producer: None, directly_awaited: true,
+                            awaited_value: None, awaited_arity: 0, async_closures: vec![],
+                        });
+                    }
                     syn::visit::visit_expr_await(self, awaited);
                 }
                 fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
@@ -247,15 +263,51 @@ fn async_closures(
                 fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
                 fn visit_item(&mut self, _: &'ast syn::Item) {}
             }
-            let awaited_parameter_methods = {
+            let (awaited_parameter_methods, awaited_self_field_methods) = {
                 let mut methods = AwaitedMethods {
                     reader,
                     parameters: &parameters,
                     shadows: &body_shadows,
                     calls: vec![],
+                    self_fields: vec![],
                 };
                 methods.visit_block(&body.block);
-                methods.calls
+                (methods.calls, methods.self_fields)
+            };
+            struct DirectFactories<'a, 'b> {
+                reader: &'a Reader<'b>,
+                callbacks: &'a BTreeSet<String>,
+                factories: Vec<super::GuardedFactory>,
+            }
+            impl<'ast> Visit<'ast> for DirectFactories<'_, '_> {
+                fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+                    if awaited.attrs.is_empty()
+                        && let Expr::MethodCall(method) = &*awaited.base
+                        && method.attrs.is_empty()
+                        && method.args.len() == 1
+                        && matches!(&*method.receiver, Expr::Path(p) if p.attrs.is_empty() && p.qself.is_none() && p.path.get_ident().is_some())
+                        && let Some(argument) = method.args.first()
+                        && let Some(closure) = local_async_closure(self.reader, argument, self.callbacks)
+                    {
+                        self.factories.push(super::GuardedFactory {
+                            await_site: self.reader.site(awaited.span()),
+                            cases: vec![super::GuardedFactoryCase {
+                                condition: "when awaited".into(), spelling: method.method.to_string(),
+                                call_site: self.reader.site(method.span()), closure,
+                            }],
+                        });
+                    }
+                    syn::visit::visit_expr_await(self, awaited);
+                }
+                fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+                fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+                fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+                fn visit_item(&mut self, _: &'ast syn::Item) {}
+            }
+            let guarded_factories = {
+                let mut factories = DirectFactories { reader, callbacks: callback_names, factories: vec![] };
+                factories.visit_block(&body.block);
+                factories.factories
             };
             Some(AsyncClosure {
                 argument,
@@ -269,6 +321,8 @@ fn async_closures(
                     .filter(|call| call.awaited_value.is_some())
                     .collect(),
                 awaited_parameter_methods,
+                awaited_self_field_methods,
+                guarded_factories,
             })
         })
         .collect()

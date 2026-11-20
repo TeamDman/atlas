@@ -37,7 +37,13 @@ pub(super) fn expanded_with_profile(
         .get(entry)
         .ok_or_else(|| format!("invalid indexed function position {entry}"))?
         .flow;
-    let mut b = Builder::new(Some(index), 600, detail);
+    // Explicitly profiled graphs can retain more conditional alternatives,
+    // while remaining bounded before rendering or exporting.
+    let mut b = Builder::new(
+        Some(index),
+        if profile.is_some() { 2400 } else { 600 },
+        detail,
+    );
     b.future_profile = profile;
     if let Some(profile) = profile {
         if !profile.scope.is_empty() {
@@ -196,7 +202,7 @@ impl<'a> Builder<'a> {
             return Err(format!("invalid indexed function position {position}").into());
         }
         if self.exhausted {
-            return Err("flow exceeds 600 source-control nodes; lower --depth or select a smaller function (nothing emitted)".into());
+            return Err(format!("flow exceeds {} source-control nodes; lower --depth or select a smaller function (nothing emitted)", self.budget).into());
         }
         Ok(self.finish(flow))
     }
@@ -410,9 +416,17 @@ impl<'a> Builder<'a> {
                     self.edge(&admitted, &cancelled, Some("if cancelled before poll"));
                     let old_exit = std::mem::replace(&mut self.exit, end.clone());
                     let old_loops = std::mem::take(&mut self.loops);
-                    let old_calls = self.deferred_calls.replace(case.closure.awaited_callbacks);
+                    let mut calls = case.closure.awaited_callbacks;
+                    calls.extend(case.closure.awaited_parameter_methods);
+                    calls.extend(case.closure.awaited_self_field_methods);
+                    let old_calls = self.deferred_calls.replace(calls);
+                    let old_factories = std::mem::replace(
+                        &mut self.guarded_factories,
+                        case.closure.guarded_factories,
+                    );
                     let ends = self.steps(&case.closure.body, vec![poll]);
                     self.connect(ends, &end);
+                    self.guarded_factories = old_factories;
                     self.deferred_calls = old_calls;
                     self.loops = old_loops;
                     self.exit = old_exit;
@@ -441,13 +455,17 @@ impl<'a> Builder<'a> {
             let outer_function = self.function.replace(binding.origin);
             let mut calls = closure.awaited_callbacks;
             calls.extend(closure.awaited_parameter_methods);
+            calls.extend(closure.awaited_self_field_methods);
             let outer_calls = self.deferred_calls.replace(calls);
+            let outer_factories =
+                std::mem::replace(&mut self.guarded_factories, closure.guarded_factories);
             let outer_receivers =
                 std::mem::replace(&mut self.deferred_receivers, binding.receiver_types.clone());
             let outer_callbacks = std::mem::replace(&mut self.callbacks, binding.captured.clone());
             let ends = self.steps(&closure.body, vec![poll]);
             self.connect(ends, &end);
             self.callbacks = outer_callbacks;
+            self.guarded_factories = outer_factories;
             self.deferred_calls = outer_calls;
             self.deferred_receivers = outer_receivers;
             self.function = outer_function;
@@ -463,6 +481,11 @@ impl<'a> Builder<'a> {
                 .as_ref()
                 .and_then(|receiver| self.deferred_receivers.get(receiver))
                 .map(|owner| index.callback_receiver_method(f, owner, call))
+                .or_else(|| {
+                    self.substitution.as_ref().and_then(|substitution| {
+                        index.resolve_substituted_field(f, call, substitution)
+                    })
+                })
         });
         if self.deferred_calls.is_some() && deferred_target.is_none() {
             return None;
@@ -815,9 +838,13 @@ impl<'a> Builder<'a> {
                 let old_group = std::mem::replace(&mut self.group, value.closure.site.path.clone());
                 let mut calls = value.closure.awaited_callbacks;
                 calls.extend(value.closure.awaited_parameter_methods);
+                calls.extend(value.closure.awaited_self_field_methods);
                 let old_calls = self.deferred_calls.replace(calls);
+                let old_factories =
+                    std::mem::replace(&mut self.guarded_factories, value.closure.guarded_factories);
                 let tails = self.steps(&value.closure.body, vec![body_poll]);
                 self.connect(tails, &end);
+                self.guarded_factories = old_factories;
                 self.deferred_calls = old_calls;
                 self.group = old_group;
                 self.substitution = old_substitution;

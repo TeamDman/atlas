@@ -216,6 +216,12 @@ pub struct AsyncClosure {
     /// Directly awaited calls on unshadowed simple closure parameters.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub awaited_parameter_methods: Vec<Call>,
+    /// Directly awaited self-field calls, still requiring a concrete substitution.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub awaited_self_field_methods: Vec<Call>,
+    /// Directly awaited inline factories, still requiring a symbol profile.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub guarded_factories: Vec<GuardedFactory>,
 }
 /// A written FnOnce-bound parameter, its position and argument count.
 #[derive(Debug, Clone, Serialize, Deserialize)]

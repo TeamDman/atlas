@@ -301,6 +301,12 @@ inherent method's future and that method directly returns a chain of declared
 forwarding wrappers around the factory. The concrete generic substitution is
 retained, and the factory body is entered only after the separate admission and
 poll conditions. Unprofiled wrappers and unpolled futures stay opaque.
+Within an opened async factory body, a directly awaited inline factory can
+likewise be entered only when its resolved symbol has a matching guarded
+contract. A directly awaited `self.field.method()` in that body may use the
+already witnessed concrete generic substitution and written trait bound; other
+dispatch alternatives remain unproved. Explicitly profiled expanded graphs
+have a 2,400-node pre-folding limit (ordinary expanded graphs retain 600).
 `{"kind":"option-type"}` and
 `{"kind":"option-some"}` declare the standard optional container and its
 present-value variant. When both identities and a unary forwarding wrapper
