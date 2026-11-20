@@ -5,6 +5,164 @@ use std::collections::BTreeSet;
 use support::Fixture;
 
 #[test]
+fn callback_receiver_uses_concrete_written_generic_argument_type() {
+    let source = "use std::future::Future; struct A; struct B; impl A{async fn run(self){}} impl B{async fn run(self){}} async fn invoke<C,F,T>(c:C,f:F) where F:FnOnce(C)->T,T:Future<Output=()>{f(c).await} pub async fn entry(){let value:A=A;invoke(value,|cli|async move{cli.run().await}).await;}";
+    let (fixture, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn A::run"));
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn B::run"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("explicit caller binding type")
+                && node.label.contains("source candidate"))
+    );
+    let b = source.replace("let value:A=A;", "let value:B=B;");
+    let (_, diagram) = inspect(&[("src/lib.rs", &b)], "entry", 2);
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn B::run"));
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn A::run"));
+    for changed in [
+        source.replace("let value:A=A;", "let value=A;"),
+        source.replace("let value:A=A;", "let value:A=A;let value:B=B;"),
+        source.replace("cli.run().await", "let cli=B;cli.run().await"),
+        source.replace("|cli|", "|cli:B|"),
+        source.replace("cli.run().await", "cli.run()"),
+        source.replace("}).await;}", "});}"),
+    ] {
+        let (_, diagram) = inspect(&[("src/lib.rs", &changed)], "entry", 2);
+        assert!(
+            !diagram
+                .nodes
+                .iter()
+                .any(|node| node.label == "fn A::run" || node.label == "fn B::run")
+        );
+    }
+}
+
+#[test]
+fn callback_receiver_type_crosses_a_workspace_crate_boundary() {
+    let app = "struct A;struct B;impl A{async fn run(self){}}impl B{async fn run(self){}}pub async fn entry(){let value:A=A;domain::invoke(value,|cli|async move{cli.run().await}).await;}";
+    let domain = "use std::future::Future;pub async fn invoke<C,F,T>(c:C,f:F) where F:FnOnce(C)->T,T:Future<Output=()>{f(c).await}";
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        ("app/src/lib.rs", app),
+        ("domain/src/lib.rs", domain),
+    ]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--workspace", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let graph = discovery::scan_metadata(&metadata).unwrap();
+    let diagram = workflow::expanded(
+        fixture.path(),
+        &metadata,
+        &graph,
+        "app/src/lib.rs",
+        "entry",
+        2,
+    )
+    .unwrap()
+    .1;
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn A::run"));
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn B::run"));
+}
+
+#[test]
+fn declared_expansion_scope_only_cuts_existing_calls() {
+    use cargo_atlas::workflow::future_profile::{FunctionSelector, FutureProfile};
+    let fixture = Fixture::new(&[(
+        "src/lib.rs",
+        "fn leaf(){} fn child(){leaf();} fn other(){} pub fn entry(){child();}",
+    )]);
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let mut profile = FutureProfile {
+        schema: 1,
+        scope: vec![FunctionSelector {
+            path: "src/lib.rs".into(),
+            function: "child".into(),
+        }],
+        sources: vec![],
+        resolutions: vec![],
+        contracts: vec![],
+    };
+    let diagram = analysis
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            3,
+            workflow::Detail::Expressions,
+            &profile,
+        )
+        .unwrap()
+        .1;
+    assert!(diagram.nodes.iter().any(|n| n.label == "fn child"));
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label == "fn leaf" || n.label == "fn other")
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("profile cut point"))
+    );
+    profile.scope[0].function = "missing".into();
+    assert!(
+        analysis
+            .expanded_with_future_profile(
+                "src/lib.rs",
+                "entry",
+                3,
+                workflow::Detail::Expressions,
+                &profile
+            )
+            .is_err()
+    );
+}
+
+#[test]
 fn profiled_factory_requires_admission_and_a_later_future_poll() {
     use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
     let source = "use std::{future::Future,pin::Pin,task::{Context,Waker}}; fn wrap<T>(v:T)->T{v} fn drive<F:Future>(f:F){let mut f=Box::pin(f);let mut cx=Context::from_waker(Waker::noop());let _=f.as_mut().poll(&mut cx);} fn reject()->bool{false} fn cancelled()->bool{false} struct Scope; impl Scope { fn first<G,T>(&self,g:G)->Pin<Box<dyn Future<Output=()>>> where G:FnOnce(())->T+'static,T:Future<Output=()>+'static{Box::pin(async move{if reject(){return;}let f=g(());if cancelled(){return;}f.await})} fn second<G,T>(&self,g:G)->Pin<Box<dyn Future<Output=()>>> where G:FnOnce(())->T+'static,T:Future<Output=()>+'static{self.first(g)} } fn bridge<F:Future>(f:F){let f=wrap(f);drive(wrap(f));} fn run<F,T>(invoke:F) where F:FnOnce()->T+'static,T:Future<Output=()>+'static{let scope=Scope;let flag=false;let invocation=wrap(async move{let run_handler=|arg:()|async move{let _=arg;invoke().await};let handler=if flag{scope.first(run_handler)}else{scope.second(run_handler)};handler.await});bridge(invocation);} fn marker(){} pub fn entry(){run(||async{marker();});}";
@@ -62,6 +220,7 @@ fn profiled_factory_requires_admission_and_a_later_future_poll() {
         }
         let profile = FutureProfile {
             schema: 1,
+            scope: vec![],
             sources: vec![],
             resolutions,
             contracts,
@@ -181,6 +340,7 @@ fn profiled_future_custody_requires_forwarders_poll_and_unshadowed_values() {
         }
         let mut profile = FutureProfile {
             schema: 1,
+            scope: vec![],
             sources: vec![],
             resolutions,
             contracts: vec![

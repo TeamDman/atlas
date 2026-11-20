@@ -300,6 +300,10 @@ or compiler output; a hash binds the supplied assertion to bytes, not to its
 correctness. Call and definition columns must have ASCII prefixes so the
 source and external token coordinate systems agree. The profile is protected
 as an input and its assertions and source hashes are listed in graph notes.
+An optional `scope` array of `{ "path": "...", "function": "..." }`
+selects existing bodies to expand; other calls remain visible cut points.
+Scope changes presentation only and does not introduce call edges. Each
+selector must resolve uniquely in the captured workspace.
 
 For a bounded builder chain, a unique written constructor returning `Self`
 and unique inherent methods returning `Self` can supply a receiver source
@@ -319,8 +323,12 @@ Unawaited functions, ignored or shadowed callbacks, indirect arguments,
 destructuring parameters, wrappers and indirect polling stay opaque. Within an
 opened closure, a direct await of an unshadowed callback captured from the
 originating function can open that callback's own future behind a second poll
-gate. Other calls in the closure body remain opaque rather than being resolved
-from the callee's scope. Cancellation and completion are not inferred.
+gate. For a directly awaited method on a simple untyped closure parameter,
+Atlas can also use a uniquely written `FnOnce` generic input and a unique
+explicit caller binding type to name a receiver candidate. Ambiguous, shadowed,
+explicitly typed, or unawaited cases remain opaque. Other calls in the closure
+body remain opaque rather than being resolved from the callee's scope.
+Cancellation and completion are not inferred.
 
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The

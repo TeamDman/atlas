@@ -1211,6 +1211,134 @@ impl Index {
             output => self.canonical(*target, &ty(output)?),
         }
     }
+
+    /// Carry only a uniquely written caller binding type through a direct
+    /// generic input used by an unambiguous FnOnce input signature.
+    pub(crate) fn callback_receiver_types(
+        &self,
+        caller: usize,
+        target: usize,
+        call: &Call,
+        parameter: &crate::analysis::workflow::CallbackParameter,
+        closure: &crate::analysis::workflow::AsyncClosure,
+    ) -> BTreeMap<String, Vec<String>> {
+        let Some(source) = self.functions.get(caller) else {
+            return BTreeMap::new();
+        };
+        let Some(destination) = self.functions.get(target) else {
+            return BTreeMap::new();
+        };
+        let formals: Vec<_> = destination
+            .flow
+            .bindings
+            .iter()
+            .filter(|binding| destination.flow.site.contains(&binding.site))
+            .collect();
+        if formals.len() != call.arguments.len()
+            || parameter.argument_types.len() != closure.parameters.len()
+        {
+            return BTreeMap::new();
+        }
+        let mut result = BTreeMap::new();
+        for (position, (name, generic)) in closure
+            .parameters
+            .iter()
+            .zip(&parameter.argument_types)
+            .enumerate()
+        {
+            if closure.receiver_inferable.get(position) != Some(&true) {
+                continue;
+            }
+            let Some(generic) = generic else { continue };
+            if !destination.flow.type_parameters.contains(generic) {
+                continue;
+            }
+            let positions: Vec<_> = formals
+                .iter()
+                .enumerate()
+                .filter(|(_, binding)| binding.ty.as_deref() == Some(generic.as_str()))
+                .map(|(position, _)| position)
+                .collect();
+            if positions.is_empty() {
+                continue;
+            }
+            let mut owners = BTreeSet::new();
+            let mut complete = true;
+            for position in positions {
+                let Ok(syn::Expr::Path(argument)) =
+                    syn::parse_str::<syn::Expr>(&call.arguments[position])
+                else {
+                    complete = false;
+                    break;
+                };
+                if argument.qself.is_some() {
+                    complete = false;
+                    break;
+                }
+                let Some(argument) = argument.path.get_ident() else {
+                    complete = false;
+                    break;
+                };
+                let argument = argument.to_string();
+                let bindings: Vec<_> = source
+                    .flow
+                    .bindings
+                    .iter()
+                    .filter(|binding| binding.name == argument)
+                    .collect();
+                let [binding] = bindings.as_slice() else {
+                    complete = false;
+                    break;
+                };
+                if (binding.site.end_line, binding.site.end_column)
+                    > (call.site.line, call.site.column)
+                {
+                    complete = false;
+                    break;
+                }
+                let Some(written) = binding.ty.as_deref().and_then(ty) else {
+                    complete = false;
+                    break;
+                };
+                if written
+                    .first()
+                    .is_some_and(|first| shadowed(&source.flow.local_names, first))
+                {
+                    complete = false;
+                    break;
+                }
+                let Some(owner) = self.binding_owner(caller, binding) else {
+                    complete = false;
+                    break;
+                };
+                owners.insert(owner);
+            }
+            if complete && owners.len() == 1 {
+                result.insert(name.clone(), owners.pop_first().expect("one owner"));
+            }
+        }
+        result
+    }
+
+    /// Use a previously witnessed concrete closure parameter as a source candidate.
+    pub(crate) fn callback_receiver_method(
+        &self,
+        caller: usize,
+        owner: &[String],
+        call: &Call,
+    ) -> Target {
+        let receiver = call.receiver.as_deref().unwrap_or("<unknown>");
+        match self.written_struct_method(caller, owner, call, receiver) {
+            Target::Function(index) => Target::Candidate(
+                index,
+                format!(
+                    "closure parameter {receiver} has candidate owner {} from a uniquely written generic input and explicit caller binding type; source candidate, not compiler proof",
+                    owner.join("::")
+                ),
+            ),
+            other => other,
+        }
+    }
 }
 
 fn is_standard_future_trait(

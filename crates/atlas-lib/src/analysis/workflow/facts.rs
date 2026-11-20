@@ -50,7 +50,7 @@ fn pattern(pat: &Pat) -> Option<String> {
 
 /// Retain uniquely written FnOnce arities on direct type parameters.
 pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParameter> {
-    fn once_arity(bound: &syn::TypeParamBound) -> Option<usize> {
+    fn once_arguments(bound: &syn::TypeParamBound) -> Option<Vec<Option<String>>> {
         let syn::TypeParamBound::Trait(bound) = bound else {
             return None;
         };
@@ -69,15 +69,31 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
         let syn::PathArguments::Parenthesized(arguments) = &segment.arguments else {
             return None;
         };
-        Some(arguments.inputs.len())
+        Some(
+            arguments
+                .inputs
+                .iter()
+                .map(|input| match &input.ty {
+                    syn::Type::Path(path) if input.attrs.is_empty() && path.qself.is_none() => {
+                        path.path.get_ident().map(ToString::to_string)
+                    }
+                    _ => None,
+                })
+                .collect(),
+        )
     }
     let mut names = BTreeMap::<String, BTreeSet<usize>>::new();
+    let mut signatures = BTreeMap::<String, BTreeSet<Vec<Option<String>>>>::new();
     for parameter in signature.generics.type_params() {
-        for arity in parameter.bounds.iter().filter_map(once_arity) {
+        for types in parameter.bounds.iter().filter_map(once_arguments) {
             names
                 .entry(parameter.ident.to_string())
                 .or_default()
-                .insert(arity);
+                .insert(types.len());
+            signatures
+                .entry(parameter.ident.to_string())
+                .or_default()
+                .insert(types);
         }
     }
     if let Some(where_clause) = &signature.generics.where_clause {
@@ -91,8 +107,15 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
                     .type_params()
                     .any(|parameter| parameter.ident == *name)
             {
-                for arity in predicate.bounds.iter().filter_map(once_arity) {
-                    names.entry(name.to_string()).or_default().insert(arity);
+                for types in predicate.bounds.iter().filter_map(once_arguments) {
+                    names
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(types.len());
+                    signatures
+                        .entry(name.to_string())
+                        .or_default()
+                        .insert(types);
                 }
             }
         }
@@ -121,6 +144,14 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
                 argument,
                 name: pattern(&arg.pat)?,
                 arity: *arities.first()?,
+                argument_types: signatures
+                    .get(&name)
+                    .and_then(|values| {
+                        (values.len() == 1)
+                            .then(|| values.first().cloned())
+                            .flatten()
+                    })
+                    .unwrap_or_default(),
             })
         })
         .collect()
@@ -165,6 +196,7 @@ fn async_closures(
             }
             let mut shadows = ShadowedNames::default();
             shadows.visit_block(&body.block);
+            let body_shadows = shadows.0.clone();
             shadows.0.extend(parameters.iter().cloned());
             let mut visitor = Facts {
                 reader,
@@ -175,9 +207,60 @@ fn async_closures(
                 callback_names: callback_names.difference(&shadows.0).cloned().collect(),
             };
             visitor.visit_block(&body.block);
+            struct AwaitedMethods<'a, 'b> {
+                reader: &'a Reader<'b>,
+                parameters: &'a [String],
+                shadows: &'a BTreeSet<String>,
+                calls: Vec<Call>,
+            }
+            impl<'ast> Visit<'ast> for AwaitedMethods<'_, '_> {
+                fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+                    if let Expr::MethodCall(method) = &*awaited.base
+                        && let Expr::Path(receiver) = &*method.receiver
+                        && receiver.qself.is_none()
+                        && let Some(name) = receiver.path.get_ident().map(ToString::to_string)
+                        && self.parameters.contains(&name)
+                        && !self.shadows.contains(&name)
+                        && method.attrs.is_empty()
+                    {
+                        self.calls.push(Call {
+                            spelling: method.method.to_string(),
+                            receiver: Some(name),
+                            arguments: method
+                                .args
+                                .iter()
+                                .map(|argument| self.reader.text(argument.span()))
+                                .collect(),
+                            site: self.reader.site(awaited.span()),
+                            awaited_block_call: false,
+                            await_producer: None,
+                            directly_awaited: true,
+                            awaited_value: None,
+                            awaited_arity: 0,
+                            async_closures: vec![],
+                        });
+                    }
+                    syn::visit::visit_expr_await(self, awaited);
+                }
+                fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+                fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+                fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+                fn visit_item(&mut self, _: &'ast syn::Item) {}
+            }
+            let awaited_parameter_methods = {
+                let mut methods = AwaitedMethods {
+                    reader,
+                    parameters: &parameters,
+                    shadows: &body_shadows,
+                    calls: vec![],
+                };
+                methods.visit_block(&body.block);
+                methods.calls
+            };
             Some(AsyncClosure {
                 argument,
                 parameters,
+                receiver_inferable: closure.inputs.iter().map(|pattern| matches!(pattern, Pat::Ident(ident) if ident.attrs.is_empty() && ident.by_ref.is_none() && ident.mutability.is_none() && ident.subpat.is_none())).collect(),
                 site: reader.site(closure.span()),
                 body: reader.deferred_block(&body.block),
                 awaited_callbacks: visitor
@@ -185,6 +268,7 @@ fn async_closures(
                     .into_iter()
                     .filter(|call| call.awaited_value.is_some())
                     .collect(),
+                awaited_parameter_methods,
             })
         })
         .collect()

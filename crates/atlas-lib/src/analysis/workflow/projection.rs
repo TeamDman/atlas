@@ -40,7 +40,22 @@ pub(super) fn expanded_with_profile(
     let mut b = Builder::new(Some(index), 600, detail);
     b.future_profile = profile;
     if let Some(profile) = profile {
+        if !profile.scope.is_empty() {
+            b.scope = Some(
+                profile
+                    .scope
+                    .iter()
+                    .map(|selector| index.select(&selector.path, &selector.function))
+                    .collect::<Result<_>>()?,
+            );
+        }
         b.declared.push("Future-wrapper contracts and call-token resolutions below are supplied input, not compiler proof or an execution trace; execution remains conditional on reaching and polling the value.".into());
+        b.declared.extend(profile.scope.iter().map(|selector| {
+            format!(
+                "Profile expansion scope {} :: {}",
+                selector.path, selector.function
+            )
+        }));
         b.declared.extend(profile.contracts.iter().map(|contract| {
             format!(
                 "Declared future contract {}: {}",
@@ -89,12 +104,15 @@ struct Builder<'a> {
     deferred_calls: Option<Vec<super::Call>>,
     future_profile: Option<&'a super::future_profile::FutureProfile>,
     future_values: std::collections::BTreeMap<String, super::future_custody::FutureValue>,
+    scope: Option<std::collections::BTreeSet<usize>>,
     guarded_factories: Vec<super::GuardedFactory>,
+    deferred_receivers: std::collections::BTreeMap<String, Vec<String>>,
 }
 pub(super) struct CallbackBinding {
     closure: super::AsyncClosure,
     origin: usize,
     captured: std::collections::BTreeMap<String, Rc<Self>>,
+    receiver_types: std::collections::BTreeMap<String, Vec<String>>,
 }
 struct LoopTarget {
     name: Option<String>,
@@ -128,7 +146,9 @@ impl<'a> Builder<'a> {
             deferred_calls: None,
             future_profile: None,
             future_values: std::collections::BTreeMap::new(),
+            scope: None,
             guarded_factories: Vec::new(),
+            deferred_receivers: std::collections::BTreeMap::new(),
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -355,12 +375,17 @@ impl<'a> Builder<'a> {
             let outer_loops = std::mem::take(&mut self.loops);
             let outer_group = std::mem::replace(&mut self.group, closure.site.path.clone());
             let outer_function = self.function.replace(binding.origin);
-            let outer_calls = self.deferred_calls.replace(closure.awaited_callbacks);
+            let mut calls = closure.awaited_callbacks;
+            calls.extend(closure.awaited_parameter_methods);
+            let outer_calls = self.deferred_calls.replace(calls);
+            let outer_receivers =
+                std::mem::replace(&mut self.deferred_receivers, binding.receiver_types.clone());
             let outer_callbacks = std::mem::replace(&mut self.callbacks, binding.captured.clone());
             let ends = self.steps(&closure.body, vec![poll]);
             self.connect(ends, &end);
             self.callbacks = outer_callbacks;
             self.deferred_calls = outer_calls;
+            self.deferred_receivers = outer_receivers;
             self.function = outer_function;
             self.group = outer_group;
             self.loops = outer_loops;
@@ -369,7 +394,13 @@ impl<'a> Builder<'a> {
         }
         // Only the captured callback awaits were indexed in this deferred body.
         // Other calls keep their opaque source representation.
-        if self.deferred_calls.is_some() {
+        let deferred_target = source_call.and_then(|call| {
+            call.receiver
+                .as_ref()
+                .and_then(|receiver| self.deferred_receivers.get(receiver))
+                .map(|owner| index.callback_receiver_method(f, owner, call))
+        });
+        if self.deferred_calls.is_some() && deferred_target.is_none() {
             return None;
         }
         if let (Some(profile), Some(call)) = (self.future_profile, source_call)
@@ -438,13 +469,15 @@ impl<'a> Builder<'a> {
             .calls
             .iter()
             .any(|call| &call.site == site && call.await_producer.is_some());
-        let target = self
-            .substitution
-            .as_ref()
-            .and_then(|substitution| {
-                source_call.and_then(|call| index.resolve_substituted_field(f, call, substitution))
-            })
-            .or_else(|| self.targets.get(&(f, site.clone())).cloned())?;
+        let target = deferred_target.or_else(|| {
+            self.substitution
+                .as_ref()
+                .and_then(|substitution| {
+                    source_call
+                        .and_then(|call| index.resolve_substituted_field(f, call, substitution))
+                })
+                .or_else(|| self.targets.get(&(f, site.clone())).cloned())
+        })?;
         let (target, reason, candidate) = match target {
             Target::Function(j) if self.stack.contains(&j) => {
                 (None, "recursion boundary".into(), false)
@@ -481,6 +514,15 @@ impl<'a> Builder<'a> {
             }
             return Some(id.to_owned());
         };
+        if let Some(scope) = &self.scope
+            && !scope.contains(&j)
+        {
+            if let Some(node) = self.nodes.iter_mut().find(|node| node.id == id) {
+                node.label
+                    .push_str("\n[profile cut point: body not expanded; continues if it returns]");
+            }
+            return Some(id.to_owned());
+        }
         if let Some(call) = source_call
             && index.callback_bound_unshadowed(j)
             && let Some(node) = self.nodes.iter_mut().find(|node| node.id == id)
@@ -563,6 +605,8 @@ impl<'a> Builder<'a> {
                             closure: (*closure).clone(),
                             origin: f,
                             captured: old_callbacks.clone(),
+                            receiver_types: index
+                                .callback_receiver_types(f, j, call, parameter, closure),
                         }),
                     );
                 }
@@ -590,7 +634,11 @@ impl<'a> Builder<'a> {
         } else {
             None
         };
+        let outer_deferred_calls = self.deferred_calls.take();
+        let outer_receivers = std::mem::take(&mut self.deferred_receivers);
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
+        self.deferred_calls = outer_deferred_calls;
+        self.deferred_receivers = outer_receivers;
         self.future_values = old_future_values;
         self.substitution = previous;
         self.callbacks = old_callbacks;

@@ -9,9 +9,19 @@ use serde::{Deserialize, Serialize};
 #[serde(deny_unknown_fields)]
 pub struct FutureProfile {
     pub schema: u32,
+    /// Optional presentation cut points: only these function bodies expand.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<FunctionSelector>,
     pub sources: Vec<ProfileSource>,
     pub resolutions: Vec<Resolution>,
     pub contracts: Vec<Contract>,
+}
+/// One existing function body selected for expansion; this does not add links.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FunctionSelector {
+    pub path: String,
+    pub function: String,
 }
 /// Exact source bytes required by the profile's author.
 #[derive(Debug, Clone, Serialize, Deserialize)]

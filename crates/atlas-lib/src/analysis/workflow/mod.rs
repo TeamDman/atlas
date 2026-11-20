@@ -205,11 +205,17 @@ pub struct AsyncClosure {
     pub argument: usize,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parameters: Vec<String>,
+    /// Only simple untyped immutable parameters are eligible for receiver substitution.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub receiver_inferable: Vec<bool>,
     pub site: Site,
     pub body: Vec<Step>,
     /// Direct awaits of unshadowed callbacks captured from the enclosing body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub awaited_callbacks: Vec<Call>,
+    /// Directly awaited calls on unshadowed simple closure parameters.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub awaited_parameter_methods: Vec<Call>,
 }
 /// A written FnOnce-bound parameter, its position and argument count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,6 +225,9 @@ pub struct CallbackParameter {
     pub name: String,
     #[serde(default, skip_serializing_if = "is_zero")]
     pub arity: usize,
+    /// Simple names written for the FnOnce inputs; unsupported types remain unknown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub argument_types: Vec<Option<String>>,
 }
 /// A future expression written inside a local initializer; the surrounding
 /// operations may discard it, so this does not establish value flow or polling.
