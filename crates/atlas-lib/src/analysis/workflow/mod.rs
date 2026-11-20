@@ -305,6 +305,15 @@ pub struct WrappedAwait {
     pub wrapper_site: Site,
     pub call: Call,
 }
+/// A returned future constructed around an inline guarded async factory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ReturnedGuardedFuture {
+    pub wrappers: Vec<DeferredWrapper>,
+    pub factory_site: Site,
+    pub factory_spelling: String,
+    pub closure: AsyncClosure,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Binding {
@@ -342,6 +351,10 @@ pub struct Workflow {
     /// Inner `self.method()` when the tail directly returns `::std::boxed::Box::pin(self.method())`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returned_pinned_self_call: Option<Site>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_self_call: Option<Site>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returned_guarded_future: Option<ReturnedGuardedFuture>,
     /// Callback parameters evidenced by written FnOnce bounds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_parameters: Vec<CallbackParameter>,

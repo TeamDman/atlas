@@ -687,6 +687,40 @@ impl Index {
         }
         Some((target, site.clone()))
     }
+    /// Source candidate for a returned self-call that constructs a guarded
+    /// factory future. The projection must verify every wrapper contract and
+    /// gate entry to the factory on admission and polling.
+    pub(crate) fn returned_guarded_target(
+        &self,
+        function: usize,
+        substitution: &AwaitSubstitution,
+    ) -> Option<usize> {
+        if !self.owner_uses_substitution(function, substitution) {
+            return None;
+        }
+        let f = self.functions.get(function)?;
+        let site = f.flow.returned_self_call.as_ref()?;
+        let mut calls = f
+            .flow
+            .calls
+            .iter()
+            .filter(|call| &call.site == site && call.receiver.as_deref() == Some("self"));
+        let call = calls.next()?;
+        if calls.next().is_some() {
+            return None;
+        }
+        let Target::Function(target) = self.resolve(function, call) else {
+            return None;
+        };
+        let body = self.functions.get(target)?;
+        if !body.generic_owner_inherent
+            || !self.owner_uses_substitution(target, substitution)
+            || body.flow.returned_guarded_future.is_none()
+        {
+            return None;
+        }
+        Some(target)
+    }
     fn resolve_receiver(
         &self,
         function: usize,

@@ -489,6 +489,103 @@ impl Reader<'_> {
         }
         out
     }
+    pub(super) fn returned_self_call(&self, block: &syn::Block) -> Option<Site> {
+        // Only a harmless, written clone of a direct self field may precede
+        // the tail. Other statements could return a different future early.
+        for stmt in block.stmts.iter().take(block.stmts.len().saturating_sub(1)) {
+            let Stmt::Local(local) = stmt else {
+                return None;
+            };
+            let syn::Pat::Ident(name) = &local.pat else {
+                return None;
+            };
+            if !local.attrs.is_empty()
+                || !name.attrs.is_empty()
+                || name.mutability.is_some()
+                || name.by_ref.is_some()
+                || name.subpat.is_some()
+            {
+                return None;
+            }
+            let init = local.init.as_ref()?;
+            if init.diverge.is_some() {
+                return None;
+            }
+            let Expr::MethodCall(call) = &*init.expr else {
+                return None;
+            };
+            if !call.attrs.is_empty()
+                || call.method != "clone"
+                || !call.args.is_empty()
+                || !matches!(&*call.receiver, Expr::Field(field) if field.attrs.is_empty() && matches!(&*field.base, Expr::Path(path) if path.attrs.is_empty() && path.qself.is_none() && path.path.is_ident("self")))
+            {
+                return None;
+            }
+        }
+        let Stmt::Expr(Expr::MethodCall(method), None) = block.stmts.last()? else {
+            return None;
+        };
+        if !method.attrs.is_empty()
+            || !matches!(&*method.receiver, Expr::Path(path) if path.attrs.is_empty() && path.qself.is_none() && path.path.is_ident("self"))
+        {
+            return None;
+        }
+        Some(self.site(method.span()))
+    }
+    pub(super) fn returned_guarded_future(
+        &self,
+        block: &syn::Block,
+        signature: &syn::Signature,
+    ) -> Option<super::ReturnedGuardedFuture> {
+        if block.stmts.len() != 1 {
+            return None;
+        }
+        let Stmt::Expr(expr, None) = block.stmts.last()? else {
+            return None;
+        };
+        let mut expr = expr;
+        let mut wrappers = Vec::new();
+        loop {
+            match expr {
+                Expr::Call(call) if call.attrs.is_empty() && call.args.len() == 1 => {
+                    let Expr::Path(path) = &*call.func else {
+                        return None;
+                    };
+                    if path.qself.is_some() {
+                        return None;
+                    }
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: path.path.segments.last()?.ident.to_string(),
+                        site: self.site(call.span()),
+                        is_method: false,
+                    });
+                    expr = call.args.first()?;
+                }
+                Expr::MethodCall(call) if call.attrs.is_empty() => {
+                    if call.args.len() == 1 {
+                        let names = super::facts::unshadowed_callbacks(signature, block);
+                        if let Some(closure) =
+                            super::facts::local_async_closure(self, call.args.first()?, &names)
+                        {
+                            return Some(super::ReturnedGuardedFuture {
+                                wrappers,
+                                factory_site: self.site(call.span()),
+                                factory_spelling: call.method.to_string(),
+                                closure,
+                            });
+                        }
+                    }
+                    wrappers.push(super::DeferredWrapper {
+                        spelling: call.method.to_string(),
+                        site: self.site(call.span()),
+                        is_method: true,
+                    });
+                    expr = &call.receiver;
+                }
+                _ => return None,
+            }
+        }
+    }
     pub(super) fn returned_pinned_self_call(&self, block: &syn::Block) -> Option<Site> {
         let Stmt::Expr(Expr::Call(call), None) = block.stmts.last()? else {
             return None;

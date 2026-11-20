@@ -2836,6 +2836,172 @@ fn an_expanded_callee_notes_its_local_declarations() {
 }
 
 #[test]
+fn returned_guarded_future_requires_profile_and_poll_admission() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = include_str!("fixtures/returned_guarded_future.rs");
+    let fixture = Fixture::new(&[("src/lib.rs", source)]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .unwrap();
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let line = source
+        .lines()
+        .enumerate()
+        .find(|(_, line)| line.contains("Box::pin(Scope.guarded"))
+        .unwrap();
+    let mut profile = FutureProfile {
+        schema: 1,
+        scope: vec![],
+        routes: vec![],
+        sources: vec![],
+        resolutions: ["pin", "guarded", "instrument"]
+            .iter()
+            .map(|spelling| Resolution {
+                path: "src/lib.rs".into(),
+                line: line.0 + 1,
+                column: line.1.find(spelling).unwrap(),
+                spelling: (*spelling).into(),
+                definition: format!("fixture::{spelling}"),
+            })
+            .collect(),
+        contracts: vec![
+            Contract {
+                definition: "fixture::pin".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "fixture pin".into(),
+            },
+            Contract {
+                definition: "fixture::instrument".into(),
+                operation: Operation::ReceiverForward,
+                evidence: "fixture instrumentation".into(),
+            },
+            Contract {
+                definition: "fixture::guarded".into(),
+                operation: Operation::GuardedFactory {
+                    argument: 0,
+                    arity: 1,
+                },
+                evidence: "fixture admission and poll".into(),
+            },
+        ],
+    };
+    let generate = |profile: &FutureProfile| {
+        analysis
+            .expanded_with_future_profile(
+                "src/lib.rs",
+                "entry",
+                6,
+                workflow::Detail::Expressions,
+                profile,
+            )
+            .unwrap()
+            .1
+    };
+    let diagram = generate(&profile);
+    let root = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "fn entry")
+        .unwrap();
+    let marker = diagram
+        .nodes
+        .iter()
+        .find(|node| {
+            node.label.contains("marker()") && node.label.contains("async-body call not indexed")
+        })
+        .expect("factory body");
+    let poll = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("poll admitted factory future"))
+        .expect("conditional poll");
+    assert!(reachable(&diagram, &root.id, &marker.id));
+    assert!(!reachable_without(&diagram, &root.id, &marker.id, &poll.id));
+    for boundary in [
+        "scope future unpolled, interrupted or not admitted",
+        "cancelled before factory future poll",
+    ] {
+        let node = diagram
+            .nodes
+            .iter()
+            .find(|node| node.label.contains(boundary))
+            .unwrap();
+        assert!(!reachable(&diagram, &node.id, &marker.id));
+    }
+    let complete = profile.clone();
+    profile.contracts.pop();
+    let missing = generate(&profile);
+    assert!(
+        !missing
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("marker()")
+                && node.label.contains("async-body call not indexed"))
+    );
+    fixture.write(
+        "src/lib.rs",
+        &source.replace("Request {}.execute().await", "Request {}.execute()"),
+    );
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let unpolled_analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let unpolled = unpolled_analysis
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            6,
+            workflow::Detail::Expressions,
+            &complete,
+        )
+        .unwrap()
+        .1;
+    assert!(
+        !unpolled
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll admitted factory future"))
+    );
+    fixture.write(
+        "src/lib.rs",
+        &source.replace(
+            "self.run()",
+            "if reject() { return Box::pin(async {}); } self.run()",
+        ),
+    );
+    let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+    let early_analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+    let early = early_analysis
+        .expanded_with_future_profile(
+            "src/lib.rs",
+            "entry",
+            6,
+            workflow::Detail::Expressions,
+            &complete,
+        )
+        .unwrap()
+        .1;
+    assert!(
+        !early
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll admitted factory future"))
+    );
+}
+
+#[test]
 fn returned_boxed_future_retains_an_explicit_poll_boundary() {
     let source = include_str!("fixtures/returned_future_flow.rs");
     let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 4);

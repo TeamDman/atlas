@@ -294,7 +294,14 @@ only after a cancellation check. Atlas recognizes a narrow source form: a
 local async closure, a two-arm conditional selecting two such factory calls,
 and an immediately following tail await. Both branches need matching contracts;
 admission rejection, cancellation before poll, and no poll stay explicit
-opaque alternatives. `{"kind":"option-type"}` and
+opaque alternatives.
+The same contracts can open a returned guarded factory when a uniquely
+resolved generic `IntoFuture` implementation directly returns its own
+inherent method's future and that method directly returns a chain of declared
+forwarding wrappers around the factory. The concrete generic substitution is
+retained, and the factory body is entered only after the separate admission and
+poll conditions. Unprofiled wrappers and unpolled futures stay opaque.
+`{"kind":"option-type"}` and
 `{"kind":"option-some"}` declare the standard optional container and its
 present-value variant. When both identities and a unary forwarding wrapper
 are source-bound, Atlas can use an unshadowed `Some(binding)` arm on a direct

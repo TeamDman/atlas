@@ -701,6 +701,38 @@ impl<'a> Builder<'a> {
         } else {
             None
         };
+        let returned_guarded = if implicit_await && self.depth >= 2 {
+            self.substitution.as_ref().and_then(|substitution| {
+                let profile = self.future_profile?;
+                let target = index.returned_guarded_target(j, substitution)?;
+                let value = index.functions()[target]
+                    .flow
+                    .returned_guarded_future
+                    .clone()?;
+                if value.wrappers.iter().any(|wrapper| {
+                    let expected = if wrapper.is_method {
+                        super::future_profile::Operation::ReceiverForward
+                    } else {
+                        super::future_profile::Operation::ArgumentForward { argument: 0 }
+                    };
+                    !profile
+                        .operation(&wrapper.site, &wrapper.spelling)
+                        .is_some_and(|contract| contract.operation == expected)
+                }) || !profile
+                    .operation(&value.factory_site, &value.factory_spelling)
+                    .is_some_and(|contract| {
+                        matches!(contract.operation,
+                        super::future_profile::Operation::GuardedFactory { argument: 0, arity }
+                        if arity == value.closure.parameters.len())
+                    })
+                {
+                    return None;
+                }
+                Some((target, value, substitution.clone()))
+            })
+        } else {
+            None
+        };
         let outer_deferred_calls = self.deferred_calls.take();
         let outer_receivers = std::mem::take(&mut self.deferred_receivers);
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
@@ -731,6 +763,8 @@ impl<'a> Builder<'a> {
             let poll = self.node(
                 if returned_future.is_some() {
                     "poll returned pinned future [source candidate; completion not guaranteed]"
+                } else if returned_guarded.is_some() {
+                    "poll returned profiled future [source candidate; completion not guaranteed]"
                 } else {
                     "poll returned future [opaque; completion not guaranteed]"
                 },
@@ -745,6 +779,52 @@ impl<'a> Builder<'a> {
                 self.substitution = previous;
                 self.edge(&poll, &future_entry, Some("if polled; source candidate"));
                 self.edge(&future_exit, &continuation, Some("if polling completes"));
+            } else if let Some((target, value, substitution)) = returned_guarded {
+                let admitted = self.node(
+                    "scope factory admitted and invoked [declared profile]",
+                    &value.factory_site,
+                );
+                let rejected = self.node(
+                    "scope future unpolled, interrupted or not admitted [opaque]",
+                    &value.factory_site,
+                );
+                self.edge(&poll, &admitted, Some("if polled and admitted"));
+                self.edge(
+                    &poll,
+                    &rejected,
+                    Some("if unpolled, interrupted or admission rejected"),
+                );
+                let body_poll = self.node(
+                    "poll admitted factory future [declared profile]",
+                    &value.closure.site,
+                );
+                let cancelled = self.node(
+                    "cancelled before factory future poll [opaque]",
+                    &value.factory_site,
+                );
+                self.edge(&admitted, &body_poll, Some("if not cancelled and polled"));
+                self.edge(&admitted, &cancelled, Some("if cancelled before poll"));
+                let end = self.node(
+                    "guarded factory future completes (value or residual)",
+                    &value.closure.site,
+                );
+                let old_exit = std::mem::replace(&mut self.exit, end.clone());
+                let old_loops = std::mem::take(&mut self.loops);
+                let old_function = self.function.replace(target);
+                let old_substitution = self.substitution.replace(substitution);
+                let old_group = std::mem::replace(&mut self.group, value.closure.site.path.clone());
+                let mut calls = value.closure.awaited_callbacks;
+                calls.extend(value.closure.awaited_parameter_methods);
+                let old_calls = self.deferred_calls.replace(calls);
+                let tails = self.steps(&value.closure.body, vec![body_poll]);
+                self.connect(tails, &end);
+                self.deferred_calls = old_calls;
+                self.group = old_group;
+                self.substitution = old_substitution;
+                self.function = old_function;
+                self.loops = old_loops;
+                self.exit = old_exit;
+                self.edge(&end, &continuation, Some("if polling completes"));
             } else {
                 self.edge(&poll, &continuation, Some("if polling completes"));
             }
