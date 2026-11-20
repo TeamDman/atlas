@@ -4,6 +4,76 @@ use cargo_atlas::{diagram::Diagram, discovery, workflow};
 use std::collections::BTreeSet;
 use support::Fixture;
 
+#[test]
+fn builder_chain_uses_written_self_returns_and_preserves_uncertainty() {
+    let library = "pub struct App; impl App { pub fn new()->Self{Self} pub fn first(self)->Self{self} pub fn second(self)->Self{self} pub fn third(self)->Self{self} pub fn run(self){} }";
+    let entry = "mod library; use library::App; pub fn entry(){ let app=App::new().first().second(); app.third().run(); }";
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", entry), ("src/library.rs", library)],
+        "entry",
+        2,
+    );
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    assert!(diagram.nodes.iter().any(|node| {
+        node.label
+            .contains("receiver follows uniquely written constructor")
+            && node.label.contains("source candidate")
+    }));
+    let conditional = library.replace("pub fn second", "#[cfg(feature = \"on\")] pub fn second");
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", entry), ("src/library.rs", &conditional)],
+        "entry",
+        2,
+    );
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    assert!(diagram.nodes.iter().any(|node| {
+        node.label
+            .contains("conditional on #[cfg(feature = \"on\")]")
+    }));
+    let competing = format!("{library} impl App {{ pub fn second(self)->Self{{self}} }}");
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", entry), ("src/library.rs", &competing)],
+        "entry",
+        2,
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    let unknown = library.replace("fn second(self)->Self", "fn second(self)->Other");
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", entry), ("src/library.rs", &unknown)],
+        "entry",
+        2,
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    let overwritten = entry.replace("app.third().run();", "app = unknown(); app.third().run();");
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", &overwritten), ("src/library.rs", library)],
+        "entry",
+        2,
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    let local_shadow = entry.replace("let app=", "struct App; let app=");
+    let (_, diagram) = inspect(
+        &[("src/lib.rs", &local_shadow), ("src/library.rs", library)],
+        "entry",
+        2,
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+}
+
+#[test]
+fn builder_callback_inside_returned_future_stays_opaque() {
+    let source = "use std::future::Future; struct App; impl App { fn new()->Self{Self} fn setup(self)->Self{self} fn run<F, Fut>(self, invoke:F) where F:FnOnce()->Fut, Fut:Future<Output=()> { let future=Box::pin(async move { invoke().await }); wait(future); } } async fn handle(){} fn wait<T>(_future:T){} pub fn entry(){App::new().setup().run(|| async {handle().await});}";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    assert!(diagram.nodes.iter().any(|node| node.label == "fn App::run"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("opaque") && node.label.contains("async move"))
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn handle"));
+}
+
 fn inspect(files: &[(&str, &str)], function: &str, depth: u8) -> (Fixture, Diagram) {
     let f = Fixture::new(files);
     let m = cargo_metadata::MetadataCommand::new()

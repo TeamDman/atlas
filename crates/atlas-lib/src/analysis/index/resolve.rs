@@ -560,6 +560,14 @@ impl Index {
                         return self.written_struct_method(function, &field_owner, call, receiver);
                     }
                 }
+                syn::Expr::MethodCall(_) => {
+                    let mut guards = Vec::new();
+                    if let Some(owner) =
+                        self.builder_expression_owner(function, &expr, &call.site, 0, &mut guards)
+                    {
+                        return self.builder_candidate(function, &owner, call, receiver, &guards);
+                    }
+                }
                 _ => {}
             }
         }
@@ -593,10 +601,196 @@ impl Index {
                 ))
             },
             |mut p| {
+                if bindings[0]
+                    .initializer
+                    .as_deref()
+                    .is_some_and(|s| syn::parse_str::<syn::ExprMethodCall>(s).is_ok())
+                {
+                    let mut guards = Vec::new();
+                    if let Some(initial) = bindings[0].initializer.as_deref()
+                        && let Ok(expr) = syn::parse_str::<syn::Expr>(initial)
+                    {
+                        self.builder_expression_owner(
+                            function,
+                            &expr,
+                            &bindings[0].site,
+                            0,
+                            &mut guards,
+                        );
+                    }
+                    return self.builder_candidate(function, &p, call, receiver, &guards);
+                }
                 p.push(call.spelling.clone());
                 self.classify(&p)
             },
         )
+    }
+
+    fn builder_candidate(
+        &self,
+        function: usize,
+        owner: &[String],
+        call: &Call,
+        receiver: &str,
+        guards: &[String],
+    ) -> Target {
+        let Some([shape]) = self.structs.get(owner).map(Vec::as_slice) else {
+            return Target::Summarized(format!(
+                "receiver {receiver}: struct declaration not unique"
+            ));
+        };
+        if !shape.supported {
+            return Target::Summarized(format!(
+                "receiver {receiver}: generic or conditional struct"
+            ));
+        }
+        let mut name = owner.to_vec();
+        name.push(call.spelling.clone());
+        match self.classify(&name) {
+            Target::Function(index)
+                if self.functions[index].inherent
+                    || self.functions[index].generic_inherent
+                    || self.functions[index].conditional_inherent.is_some() =>
+            {
+                let mut conditions = guards.to_vec();
+                if let Some(guard) = &self.functions[index].conditional_inherent {
+                    conditions.push(guard.clone());
+                }
+                Target::Candidate(
+                    index,
+                    format!(
+                        "receiver follows uniquely written constructor and Self-returning inherent methods; source candidate, not compiler inference; macro, generic constraints, and external alternatives remain unknown{}",
+                        if conditions.is_empty() {
+                            String::new()
+                        } else {
+                            format!("; conditional on {}", conditions.join(" and "))
+                        }
+                    ),
+                )
+            }
+            _ => self.written_struct_method(function, owner, call, receiver),
+        }
+    }
+
+    /// Follow only bounded chains whose unique written methods return `Self`.
+    /// This records a source candidate and does not prove overload selection.
+    fn builder_expression_owner(
+        &self,
+        function: usize,
+        expr: &syn::Expr,
+        before: &crate::analysis::workflow::Site,
+        depth: usize,
+        guards: &mut Vec<String>,
+    ) -> Option<Vec<String>> {
+        if depth >= 12 {
+            return None;
+        }
+        match expr {
+            syn::Expr::Paren(inner) => {
+                self.builder_expression_owner(function, &inner.expr, before, depth + 1, guards)
+            }
+            syn::Expr::Group(inner) => {
+                self.builder_expression_owner(function, &inner.expr, before, depth + 1, guards)
+            }
+            syn::Expr::Path(value) if value.qself.is_none() => {
+                let name = value.path.get_ident()?.to_string();
+                let f = self.functions.get(function)?;
+                let bindings: Vec<_> = f
+                    .flow
+                    .bindings
+                    .iter()
+                    .filter(|binding| {
+                        binding.name == name
+                            && (binding.site.end_line, binding.site.end_column)
+                                <= (before.line, before.column)
+                    })
+                    .collect();
+                let [binding] = bindings.as_slice() else {
+                    return None;
+                };
+                if let Some(owner) = binding
+                    .ty
+                    .as_deref()
+                    .and_then(ty)
+                    .and_then(|written| self.canonical(function, &written))
+                {
+                    return Some(owner);
+                }
+                let initial = binding.initializer.as_deref()?;
+                if let Ok(expression) = syn::parse_str::<syn::Expr>(initial) {
+                    return self.builder_expression_owner(
+                        function,
+                        &expression,
+                        &binding.site,
+                        depth + 1,
+                        guards,
+                    );
+                }
+                None
+            }
+            syn::Expr::Call(call) => {
+                let syn::Expr::Path(path) = &*call.func else {
+                    return None;
+                };
+                if path.qself.is_some() {
+                    return None;
+                }
+                let parts: Vec<_> = path
+                    .path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect();
+                let f = self.functions.get(function)?;
+                if parts
+                    .first()
+                    .is_some_and(|first| shadowed(&f.flow.local_names, first))
+                {
+                    return None;
+                }
+                let name = self.canonical(function, &parts)?;
+                let Target::Function(target) = self.classify(&name) else {
+                    return None;
+                };
+                let body = self.functions.get(target)?;
+                if body.flow.output != "Self" {
+                    return None;
+                }
+                self.canonical(target, &["Self".into()])
+            }
+            syn::Expr::MethodCall(call) => {
+                let owner = self.builder_expression_owner(
+                    function,
+                    &call.receiver,
+                    before,
+                    depth + 1,
+                    guards,
+                )?;
+                let Some([shape]) = self.structs.get(&owner).map(Vec::as_slice) else {
+                    return None;
+                };
+                if !shape.supported {
+                    return None;
+                }
+                let mut name = owner.clone();
+                name.push(call.method.to_string());
+                let Target::Function(target) = self.classify(&name) else {
+                    return None;
+                };
+                let body = self.functions.get(target)?;
+                if !(body.inherent || body.generic_inherent || body.conditional_inherent.is_some())
+                    || body.flow.output != "Self"
+                    || self.canonical(target, &["Self".into()]).as_ref() != Some(&owner)
+                {
+                    return None;
+                }
+                if let Some(guard) = &body.conditional_inherent {
+                    guards.push(guard.clone());
+                }
+                Some(owner)
+            }
+            _ => None,
+        }
     }
 
     fn written_struct_method(
@@ -801,7 +995,17 @@ impl Index {
         if let Some(written) = binding.ty.as_deref().and_then(ty) {
             return self.canonical(function, &written);
         }
-        let initializer = path(binding.initializer.as_deref()?)?;
+        let value = binding.initializer.as_deref()?;
+        if let Ok(expression @ syn::Expr::MethodCall(_)) = syn::parse_str::<syn::Expr>(value) {
+            return self.builder_expression_owner(
+                function,
+                &expression,
+                &binding.site,
+                0,
+                &mut Vec::new(),
+            );
+        }
+        let initializer = path(value)?;
         let canonical = self.canonical(function, &initializer)?;
         let exported = self.exported(&canonical)?;
         let [target] = self.names.get(&exported)?.as_slice() else {

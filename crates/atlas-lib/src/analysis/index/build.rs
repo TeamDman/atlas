@@ -65,6 +65,10 @@ impl Index {
                         scope: function_scope,
                         inherent: self.inherent_sites.contains(&flow.site),
                         generic_inherent: self.generic_inherent_sites.contains(&flow.site),
+                        conditional_inherent: self
+                            .conditional_inherent_sites
+                            .get(&flow.site)
+                            .cloned(),
                         default_body,
                         flow: flow.clone(),
                     });

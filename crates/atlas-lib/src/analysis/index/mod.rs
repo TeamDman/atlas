@@ -29,6 +29,7 @@ pub struct Function {
     pub flow: Workflow,
     inherent: bool,
     generic_inherent: bool,
+    conditional_inherent: Option<String>,
     default_body: bool,
 }
 #[non_exhaustive]
@@ -70,6 +71,7 @@ pub struct Index {
     structs: BTreeMap<Vec<String>, Vec<receivers::StructShape>>,
     inherent_sites: BTreeSet<super::workflow::Site>,
     generic_inherent_sites: BTreeSet<super::workflow::Site>,
+    conditional_inherent_sites: BTreeMap<super::workflow::Site, String>,
     traits: BTreeMap<Vec<String>, Vec<receivers::TraitShape>>,
     impls: Vec<receivers::TraitImpl>,
 }
@@ -159,6 +161,7 @@ impl Index {
             structs: BTreeMap::new(),
             inherent_sites: BTreeSet::new(),
             generic_inherent_sites: BTreeSet::new(),
+            conditional_inherent_sites: BTreeMap::new(),
             traits: BTreeMap::new(),
             impls: Vec::new(),
         };

@@ -59,6 +59,7 @@ pub(in crate::analysis) struct ReceiverFacts {
     structs: BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: BTreeSet<Site>,
     generic_inherent: BTreeSet<Site>,
+    conditional_inherent: BTreeMap<Site, String>,
     traits: BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: Vec<TraitImpl>,
 }
@@ -75,9 +76,11 @@ pub(in crate::analysis) fn read(
         &[],
         SyntaxSelection::Selected { source, tests },
         file,
+        source.text(),
         &mut facts.structs,
         &mut facts.inherent,
         &mut facts.generic_inherent,
+        &mut facts.conditional_inherent,
         &mut facts.traits,
         &mut facts.impls,
     );
@@ -234,9 +237,11 @@ fn collect(
     scope: &[String],
     selection: SyntaxSelection<'_>,
     file: &str,
+    source: &str,
     structs: &mut BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: &mut BTreeSet<Site>,
     generic_inherent: &mut BTreeSet<Site>,
+    conditional_inherent: &mut BTreeMap<Site, String>,
     traits: &mut BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: &mut Vec<TraitImpl>,
 ) {
@@ -255,9 +260,11 @@ fn collect(
                         &child,
                         selection,
                         file,
+                        source,
                         structs,
                         inherent,
                         generic_inherent,
+                        conditional_inherent,
                         traits,
                         impls,
                     );
@@ -311,9 +318,21 @@ fn collect(
                 for member in &i.items {
                     if let syn::ImplItem::Fn(f) = member
                         && selection.admits(f.span())
-                        && !conditional(&f.attrs)
                         && f.sig.receiver().is_some()
                     {
+                        if conditional(&f.attrs) {
+                            let gates = f
+                                .attrs
+                                .iter()
+                                .filter(|a| {
+                                    a.path().is_ident("cfg") || a.path().is_ident("cfg_attr")
+                                })
+                                .map(|a| crate::source_text::text(source, a.span()))
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            conditional_inherent.insert(Site::at(file, f.sig.span()), gates);
+                            continue;
+                        }
                         let sites = if f.sig.generics.type_params().next().is_none() {
                             &mut *inherent
                         } else {
@@ -482,6 +501,8 @@ impl Index {
                 self.inherent_sites.extend(facts.inherent.iter().cloned());
                 self.generic_inherent_sites
                     .extend(facts.generic_inherent.iter().cloned());
+                self.conditional_inherent_sites
+                    .extend(facts.conditional_inherent.clone());
                 for (path, shapes) in &facts.traits {
                     let key = scope.iter().chain(path).cloned().collect();
                     self.traits

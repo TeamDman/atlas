@@ -255,6 +255,13 @@ future's poll remains an explicit opaque boundary. The substitution can be
 carried to a `self` call on the same written generic owner; it is not inferred
 through arbitrary aliases, closures, future wrappers or dynamic dispatch.
 
+For a bounded builder chain, a unique written constructor returning `Self`
+and unique inherent methods returning `Self` can supply a receiver source
+candidate. Conditional methods retain their written `cfg` attributes in the
+candidate label. Macro effects, external alternatives, and generic constraints
+remain unknown; reassignment, ambiguity, and unsupported return shapes stop
+the chain.
+
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The
 hidden steps are still listed in the JSON evidence.

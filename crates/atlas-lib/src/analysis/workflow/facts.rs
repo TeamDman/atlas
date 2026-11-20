@@ -131,7 +131,7 @@ fn initializer(expr: &Expr) -> Option<&Expr> {
     match expr {
         Expr::Paren(e) => initializer(&e.expr),
         Expr::Reference(e) => initializer(&e.expr),
-        Expr::Call(_) => Some(expr),
+        Expr::Call(_) | Expr::MethodCall(_) => Some(expr),
         _ => None,
     }
 }
@@ -162,12 +162,13 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 .init
                 .as_ref()
                 .and_then(|i| initializer(&i.expr))
-                .and_then(|e| {
-                    if let Expr::Call(c) = e {
-                        Some(self.reader.text(c.func.span()))
-                    } else {
-                        None
+                .and_then(|e| match e {
+                    Expr::Call(c) => Some(self.reader.text(c.func.span())),
+                    Expr::MethodCall(_) => {
+                        let text = crate::source_text::text(self.reader.source, e.span());
+                        (text.len() <= 4096).then_some(text)
                     }
+                    _ => None,
                 });
             self.bindings.push(Binding {
                 name,
