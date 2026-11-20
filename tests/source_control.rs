@@ -347,6 +347,205 @@ fn awaited_paths_in_async_blocks_refuse_shadowed_and_sync_targets() {
 }
 
 #[test]
+fn await_follows_unique_written_into_future_candidate_with_concrete_self() {
+    let source = "use std::future::IntoFuture; struct Req {} struct Wrap<T>(T); fn helper() {} impl<T> Wrap<T> { fn drive(self) -> std::future::Ready<()> { std::future::ready(()) } } trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T> IntoFuture for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { helper(); self.drive() } } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "run", 3);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::drive")
+                && n.label.contains("source substitution T = fixture::Req"))
+    );
+    assert!(diagram.nodes.iter().any(|n| n.label == "fn helper"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("T = fixture::Req")
+                && n.label.contains("bounds")
+                && n.label.contains("not proved"))
+    );
+    assert!(diagram.edges.iter().any(|e| {
+        e.label.as_deref() == Some("source candidate")
+            && diagram
+                .nodes
+                .iter()
+                .any(|n| n.id == e.from && n.label.contains(".await"))
+    }));
+    let poll = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label.contains("poll returned future [opaque"))
+        .unwrap();
+    assert!(
+        diagram
+            .edges
+            .iter()
+            .any(|e| e.to == poll.id && e.label.as_deref() == Some("candidate returns future"))
+    );
+    assert!(
+        diagram
+            .edges
+            .iter()
+            .any(|e| e.from == poll.id && e.label.as_deref() == Some("if polling completes"))
+    );
+}
+
+#[test]
+fn await_refuses_unpolled_ambiguous_or_unrelated_into_future() {
+    let prefix = "use std::future::IntoFuture; struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T> IntoFuture for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } ";
+    let unawaited = format!("{prefix} pub async fn run(){{ Req {{}}.execute(); }}");
+    let (_, diagram) = inspect(&[("src/lib.rs", &unawaited)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    let ambiguous = format!(
+        "{prefix} #[cfg(feature=\"other\")] impl IntoFuture for Wrap<Req> {{ type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture {{ std::future::ready(()) }} }} pub async fn run(){{ Req {{}}.execute().await; }}"
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &ambiguous)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(diagram.nodes.iter().any(|n| {
+        n.label
+            .contains("implicit IntoFuture not uniquely evidenced")
+    }));
+    let unrelated = "trait IntoFuture { fn into_future(self); } struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T> IntoFuture for Wrap<T> { fn into_future(self) {} } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", unrelated)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    let unmatched = "use std::future::IntoFuture; struct Req {} struct Wrap<T>(T); trait Other {} trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T: Other> IntoFuture for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", unmatched)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(diagram.nodes.iter().any(|n| {
+        n.label
+            .contains("implicit IntoFuture not uniquely evidenced")
+    }));
+}
+
+#[test]
+fn into_future_accepts_only_witnessed_trait_bounds() {
+    let source = "use std::future::IntoFuture; struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T: Exec> IntoFuture for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "run", 3);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("written trait bounds matched"))
+    );
+    let unsupported = source.replace(
+        "impl<T: Exec> IntoFuture",
+        "impl<T: Exec + Send> IntoFuture",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &unsupported)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    let associated = source
+        .replace("trait Exec: Sized {", "trait Exec: Sized { type Item;")
+        .replace(
+            "impl Exec for Req {}",
+            "impl Exec for Req { type Item = (); }",
+        )
+        .replace(
+            "impl<T: Exec> IntoFuture for Wrap<T> {",
+            "impl<T: Exec> IntoFuture for Wrap<T> where T::Item: 'static {",
+        );
+    let (_, diagram) = inspect(&[("src/lib.rs", &associated)], "run", 3);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    let absent = associated.replace("type Item = ();", "");
+    let (_, diagram) = inspect(&[("src/lib.rs", &absent)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+}
+
+#[test]
+fn into_future_recognizes_explicit_aliases_but_refuses_unknown_glob_competitors() {
+    let alias = "use std::future::IntoFuture as Convert; struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T> Convert for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", alias)], "run", 3);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    let ambiguous = "struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} mod first { use super::Wrap; use std::future::IntoFuture; impl<T> IntoFuture for Wrap<T> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } } mod second { use super::{Req,Wrap}; use std::future::*; #[cfg(feature=\"other\")] impl IntoFuture for Wrap<Req> { type Output=(); type IntoFuture=std::future::Ready<()>; fn into_future(self) -> Self::IntoFuture { std::future::ready(()) } } } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", ambiguous)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(diagram.nodes.iter().any(|n| {
+        n.label
+            .contains("implicit IntoFuture not uniquely evidenced")
+    }));
+    let conflicting_future = format!(
+        "{alias} #[cfg(feature=\"other\")] impl<T> std::future::Future for Wrap<T> {{ type Output=(); fn poll(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<()> {{ std::task::Poll::Ready(()) }} }}"
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &conflicting_future)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+    assert!(diagram.nodes.iter().any(|n| {
+        n.label
+            .contains("implicit IntoFuture not uniquely evidenced")
+    }));
+    let spoofed = "mod std { pub mod future { pub trait IntoFuture { fn into_future(self); } } } use std::future::IntoFuture; struct Req {} struct Wrap<T>(T); trait Exec: Sized { fn execute(self) -> Wrap<Self> { Wrap(self) } } impl Exec for Req {} impl<T> IntoFuture for Wrap<T> { fn into_future(self) {} } pub async fn run(){ Req {}.execute().await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", spoofed)], "run", 3);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.contains("fn Wrap<T>::into_future"))
+    );
+}
+
+#[test]
 fn trait_defaults_and_overrides_are_explicit_source_candidates() {
     let (_, d) = inspect(
         &[

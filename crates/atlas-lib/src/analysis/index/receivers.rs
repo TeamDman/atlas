@@ -27,6 +27,7 @@ pub(super) struct StructShape {
 pub(super) struct TraitShape {
     pub methods: BTreeMap<String, Vec<Option<Site>>>,
     pub supported: bool,
+    pub associated_types: BTreeSet<String>,
 }
 
 #[derive(Clone)]
@@ -39,6 +40,17 @@ pub(super) struct TraitImpl {
     pub supported: bool,
     pub methods: BTreeMap<String, Vec<Site>>,
     pub site: Site,
+    /// One type parameter used directly as the sole type argument of the owner.
+    pub future_parameter: Option<String>,
+    pub future_bounds: Option<FutureBounds>,
+    pub future_method_ok: bool,
+    pub associated_types: BTreeSet<String>,
+}
+
+#[derive(Clone, Default)]
+pub(super) struct FutureBounds {
+    pub traits: Vec<Vec<String>>,
+    pub associated_types: BTreeSet<String>,
 }
 
 /// Scope-relative observations reusable when one physical file has several mounts.
@@ -76,6 +88,141 @@ fn conditional(attrs: &[syn::Attribute]) -> bool {
     attrs
         .iter()
         .any(|a| a.path().is_ident("cfg") || a.path().is_ident("cfg_attr"))
+}
+
+fn future_parameter(item: &syn::ItemImpl, owner: &syn::TypePath) -> Option<String> {
+    if conditional(&item.attrs)
+        || item.modifiers.polarity.is_some()
+        || item.modifiers.defaultness.is_some()
+        || item.generics.const_params().next().is_some()
+        || item.trait_.as_ref().is_none_or(|(path, _)| {
+            path.segments
+                .iter()
+                .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
+        })
+    {
+        return None;
+    }
+    let params: Vec<_> = item.generics.type_params().collect();
+    let [parameter] = params.as_slice() else {
+        return None;
+    };
+    let last = owner.path.segments.last()?;
+    if owner
+        .path
+        .segments
+        .iter()
+        .take(owner.path.segments.len().saturating_sub(1))
+        .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
+    {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
+        return None;
+    };
+    let mut types = Vec::new();
+    for argument in &arguments.args {
+        match argument {
+            syn::GenericArgument::Type(syn::Type::Path(path)) if path.qself.is_none() => {
+                types.push(&path.path);
+            }
+            syn::GenericArgument::Lifetime(_) => {}
+            _ => return None,
+        }
+    }
+    let [argument] = types.as_slice() else {
+        return None;
+    };
+    (argument.is_ident(&parameter.ident)).then(|| parameter.ident.to_string())
+}
+
+/// Accept only simple trait bounds on the type parameter and lifetime bounds
+/// on it or its associated types. Other predicates remain unresolved.
+fn future_bounds(item: &syn::ItemImpl, parameter: &str) -> Option<FutureBounds> {
+    let mut traits = Vec::new();
+    let mut associated_types = BTreeSet::new();
+    let mut collect_bounds =
+        |bounds: &syn::punctuated::Punctuated<syn::TypeParamBound, syn::Token![+]>,
+         associated: bool|
+         -> Option<()> {
+            for bound in bounds {
+                match bound {
+                    syn::TypeParamBound::Lifetime(_) => {}
+                    syn::TypeParamBound::Trait(t)
+                        if !associated
+                            && t.maybe.is_none()
+                            && t.lifetimes.is_none()
+                            && t.modifiers.require_empty().is_ok()
+                            && t.path
+                                .segments
+                                .iter()
+                                .all(|s| matches!(s.arguments, syn::PathArguments::None)) =>
+                    {
+                        traits.push(
+                            t.path
+                                .segments
+                                .iter()
+                                .map(|s| s.ident.to_string())
+                                .collect(),
+                        );
+                    }
+                    _ => return None,
+                }
+            }
+            Some(())
+        };
+    for lifetime in item.generics.lifetimes() {
+        if !lifetime.bounds.is_empty() {
+            return None;
+        }
+    }
+    for param in item.generics.type_params() {
+        if param.ident != parameter {
+            return None;
+        }
+        collect_bounds(&param.bounds, false)?;
+    }
+    if let Some(where_clause) = &item.generics.where_clause {
+        for predicate in &where_clause.predicates {
+            let syn::WherePredicate::Type(predicate) = predicate else {
+                return None;
+            };
+            if predicate.lifetimes.is_some() || !predicate.attrs.is_empty() {
+                return None;
+            }
+            let syn::Type::Path(path) = &predicate.bounded_ty else {
+                return None;
+            };
+            if path.qself.is_some()
+                || path
+                    .path
+                    .segments
+                    .iter()
+                    .any(|s| !matches!(s.arguments, syn::PathArguments::None))
+            {
+                return None;
+            }
+            let names: Vec<_> = path
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect();
+            let associated = match names.as_slice() {
+                [name] if name == parameter => false,
+                [name, associated] if name == parameter => {
+                    associated_types.insert(associated.clone());
+                    true
+                }
+                _ => return None,
+            };
+            collect_bounds(&predicate.bounds, associated)?;
+        }
+    }
+    Some(FutureBounds {
+        traits,
+        associated_types,
+    })
 }
 
 #[expect(
@@ -178,10 +325,21 @@ fn collect(
             }
             Item::Trait(t) => {
                 let mut methods: BTreeMap<String, Vec<Option<Site>>> = BTreeMap::new();
+                let mut associated_types = BTreeSet::new();
                 let mut supported = t.generics.params.is_empty()
                     && t.generics.where_clause.is_none()
                     && !conditional(&t.attrs);
                 for member in &t.items {
+                    if let syn::TraitItem::Type(ty) = member {
+                        if conditional(&ty.attrs)
+                            || !ty.generics.params.is_empty()
+                            || ty.generics.where_clause.is_some()
+                        {
+                            supported = false;
+                        } else {
+                            associated_types.insert(ty.ident.to_string());
+                        }
+                    }
                     if let syn::TraitItem::Fn(f) = member
                         && selection.admits(f.span())
                     {
@@ -196,10 +354,11 @@ fn collect(
                 }
                 let mut key = scope.to_vec();
                 key.push(t.ident.to_string());
-                traits
-                    .entry(key)
-                    .or_default()
-                    .push(TraitShape { methods, supported });
+                traits.entry(key).or_default().push(TraitShape {
+                    methods,
+                    supported,
+                    associated_types,
+                });
             }
             Item::Impl(i) if i.trait_.is_some() => {
                 let Some((trait_path, _)) = &i.trait_ else {
@@ -233,10 +392,30 @@ fn collect(
                         .iter()
                         .all(|s| matches!(s.arguments, syn::PathArguments::None));
                 let mut methods: BTreeMap<String, Vec<Site>> = BTreeMap::new();
+                let mut future_method_ok = true;
+                let mut associated_types = BTreeSet::new();
                 for member in &i.items {
+                    if let syn::ImplItem::Type(ty) = member {
+                        if conditional(&ty.attrs)
+                            || !ty.generics.params.is_empty()
+                            || ty.generics.where_clause.is_some()
+                        {
+                            supported = false;
+                        } else {
+                            associated_types.insert(ty.ident.to_string());
+                        }
+                    }
                     if let syn::ImplItem::Fn(f) = member
                         && selection.admits(f.span())
                     {
+                        if f.sig.ident == "into_future" {
+                            future_method_ok &= !conditional(&f.attrs)
+                                && f.sig.asyncness.is_none()
+                                && f.sig.receiver().is_some_and(|receiver| {
+                                    matches!(receiver.kind, syn::ReceiverKind::Value)
+                                })
+                                && f.sig.generics.type_params().next().is_none();
+                        }
                         supported &= !conditional(&f.attrs)
                             && f.sig.receiver().is_some()
                             && f.sig.generics.type_params().next().is_none();
@@ -246,6 +425,10 @@ fn collect(
                             .push(Site::at(file, f.sig.span()));
                     }
                 }
+                let future_parameter = future_parameter(i, owner);
+                let future_bounds = future_parameter
+                    .as_deref()
+                    .and_then(|parameter| future_bounds(i, parameter));
                 impls.push(TraitImpl {
                     scope: scope.to_vec(),
                     imports: imports.clone(),
@@ -259,6 +442,10 @@ fn collect(
                     supported,
                     methods,
                     site: Site::at(file, i.span()),
+                    future_parameter,
+                    future_bounds,
+                    future_method_ok,
+                    associated_types,
                 });
             }
             _ => {}

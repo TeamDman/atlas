@@ -36,6 +36,13 @@ pub struct Boundary {
     pub module: Module,
     pub path: Vec<String>,
 }
+/// A source-only substitution witnessed at a directly awaited constructor.
+#[derive(Clone)]
+pub(crate) struct AwaitSubstitution {
+    pub owner: Vec<String>,
+    pub parameter: String,
+    pub concrete: Vec<String>,
+}
 /// Immutable correlated name tables. Function and boundary positions are local
 /// to this index; borrowing accessors cannot reorder or replace their contents.
 ///

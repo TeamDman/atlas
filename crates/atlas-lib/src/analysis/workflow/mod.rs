@@ -174,6 +174,9 @@ pub struct Call {
     /// A directly awaited source call inside a directly awaited block.
     #[serde(default)]
     pub awaited_block_call: bool,
+    /// Written call whose result is directly awaited at `site`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub await_producer: Option<Site>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]

@@ -209,6 +209,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 .collect(),
             site: self.reader.site(call.span()),
             awaited_block_call: false,
+            await_producer: None,
         });
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -226,6 +227,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 .collect(),
             site: self.reader.site(call.span()),
             awaited_block_call: false,
+            await_producer: None,
         });
     }
     fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
@@ -240,6 +242,22 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             visitor.visit_block(&block.block);
         } else {
             syn::visit::visit_expr_await(self, awaited);
+            if let Expr::MethodCall(call) = &*awaited.base
+                && matches!(&*call.receiver, Expr::Struct(_))
+            {
+                self.calls.push(Call {
+                    spelling: call.method.to_string(),
+                    receiver: Some(self.reader.text(call.receiver.span())),
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|a| self.reader.text(a.span()))
+                        .collect(),
+                    site: self.reader.site(awaited.span()),
+                    awaited_block_call: false,
+                    await_producer: Some(self.reader.site(call.span())),
+                });
+            }
         }
     }
     fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
@@ -303,6 +321,7 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                         .collect(),
                     site: self.reader.site(awaited.span()),
                     awaited_block_call: true,
+                    await_producer: None,
                 });
             } else if let Some(call) = direct_path_call(&awaited.base)
                 && let Expr::Path(path) = &*call.func
@@ -321,6 +340,7 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                         .collect(),
                     site: self.reader.site(awaited.span()),
                     awaited_block_call: true,
+                    await_producer: None,
                 });
             }
         }

@@ -1,6 +1,6 @@
 //! Conservative call lookup through explicit imports, reexports and signature types.
 //! Ambiguous, indirect and unsupported calls stay summarized; no Rust type inference.
-use super::{Function, Index, Target};
+use super::{AwaitSubstitution, Function, Index, Target};
 use crate::{
     analysis::workflow::{Binding, Call},
     architecture::Kind,
@@ -197,6 +197,9 @@ impl Index {
         let Some(f) = self.functions.get(function) else {
             return Target::InvalidFunction(function);
         };
+        if let Some(producer) = &call.await_producer {
+            return self.resolve_into_future(function, producer);
+        }
         if let Some(receiver) = &call.receiver {
             return self.resolve_receiver(function, f, receiver, call);
         }
@@ -239,6 +242,262 @@ impl Index {
             || Target::Summarized("ambiguous source import".into()),
             |p| self.classify(&p),
         )
+    }
+    /// Match only a written `Wrapper<'a, Self>` result from a resolved method
+    /// on a written struct literal to a unique local `IntoFuture for Wrapper<R>`.
+    /// Bounds and external/macro-generated implementations remain unproved.
+    fn resolve_into_future(
+        &self,
+        function: usize,
+        producer: &crate::analysis::workflow::Site,
+    ) -> Target {
+        self.find_into_future_candidate(function, producer)
+            .map_or_else(
+                || {
+                    Target::Summarized(
+                        "implicit IntoFuture not uniquely evidenced; polling remains opaque".into(),
+                    )
+                },
+                |(target, _)| target,
+            )
+    }
+    fn find_into_future_candidate(
+        &self,
+        function: usize,
+        producer: &crate::analysis::workflow::Site,
+    ) -> Option<(Target, AwaitSubstitution)> {
+        let caller = self.functions.get(function)?;
+        let mut calls = caller
+            .flow
+            .calls
+            .iter()
+            .filter(|call| &call.site == producer && call.await_producer.is_none());
+        let call = calls.next()?;
+        if calls.next().is_some() {
+            return None;
+        }
+        let syn::Expr::Struct(receiver) =
+            syn::parse_str::<syn::Expr>(call.receiver.as_deref()?).ok()?
+        else {
+            return None;
+        };
+        if receiver.qself.is_some()
+            || receiver
+                .path
+                .segments
+                .iter()
+                .any(|s| !matches!(s.arguments, syn::PathArguments::None))
+        {
+            return None;
+        }
+        let parts: Vec<_> = receiver
+            .path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect();
+        let concrete = self.struct_path(&self.canonical(function, &parts)?)?;
+        let (Target::Function(producer_index) | Target::Candidate(producer_index, _)) =
+            self.resolve(function, call)
+        else {
+            return None;
+        };
+        let producer_flow = &self.functions.get(producer_index)?.flow;
+        if producer_flow.async_function {
+            return None;
+        }
+        let producer_trait = if self.functions[producer_index].default_body {
+            let trait_name = producer_flow
+                .function
+                .rsplit_once("::")?
+                .0
+                .rsplit("::")
+                .next()?;
+            self.canonical(producer_index, &[trait_name.to_owned()])
+        } else {
+            None
+        };
+        let syn::Type::Path(output) = syn::parse_str::<syn::Type>(&producer_flow.output).ok()?
+        else {
+            return None;
+        };
+        if output.qself.is_some() {
+            return None;
+        }
+        let last = output.path.segments.last()?;
+        if output
+            .path
+            .segments
+            .iter()
+            .take(output.path.segments.len().saturating_sub(1))
+            .any(|segment| !matches!(segment.arguments, syn::PathArguments::None))
+        {
+            return None;
+        }
+        let syn::PathArguments::AngleBracketed(arguments) = &last.arguments else {
+            return None;
+        };
+        let mut types = Vec::new();
+        for argument in &arguments.args {
+            match argument {
+                syn::GenericArgument::Lifetime(_) => {}
+                syn::GenericArgument::Type(ty) => types.push(ty),
+                _ => return None,
+            }
+        }
+        let [syn::Type::Path(argument)] = types.as_slice() else {
+            return None;
+        };
+        if argument.qself.is_some() || !argument.path.is_ident("Self") {
+            return None;
+        }
+        let outer: Vec<_> = output
+            .path
+            .segments
+            .iter()
+            .map(|s| s.ident.to_string())
+            .collect();
+        let owner = self.canonical(producer_index, &outer)?;
+        let mut found = Vec::new();
+        for implementation in &self.impls {
+            let known = is_standard_future_trait(self, implementation, "IntoFuture");
+            let future = is_standard_future_trait(self, implementation, "Future");
+            let uncertain_glob = !known
+                && (implementation.trait_path == ["IntoFuture"]
+                    || implementation.trait_path == ["Future"])
+                && implementation.imports.contains_key("*");
+            if !known && !future && !uncertain_glob {
+                continue;
+            }
+            if implementation.generic_owner {
+                return None;
+            }
+            let impl_owner = self.in_scope(
+                &implementation.scope,
+                &implementation.imports,
+                &implementation.owner,
+            )?;
+            if impl_owner != owner {
+                continue;
+            }
+            if uncertain_glob || future {
+                return None;
+            }
+            let parameter = implementation.future_parameter.as_ref()?;
+            let bounds = implementation.future_bounds.as_ref()?;
+            for bound in &bounds.traits {
+                let bound = self.in_scope(&implementation.scope, &implementation.imports, bound)?;
+                if producer_trait.as_ref() != Some(&bound) {
+                    return None;
+                }
+            }
+            if !bounds.associated_types.is_empty()
+                && !self.witnessed_associated_types(
+                    producer_trait.as_deref()?,
+                    &concrete,
+                    &bounds.associated_types,
+                )
+            {
+                return None;
+            }
+            if !implementation.future_method_ok {
+                return None;
+            }
+            let [site] = implementation.methods.get("into_future")?.as_slice() else {
+                return None;
+            };
+            let mut matches = self
+                .functions
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| &f.flow.site == site && !f.default_body)
+                .map(|(i, _)| i);
+            let index = matches.next()?;
+            if matches.next().is_some() {
+                return None;
+            }
+            found.push((index, format!("IntoFuture impl at {}; {} = {}; written trait bounds matched; lifetimes, external impls and macro effects not proved", implementation.site.link(), parameter, concrete.join("::")), AwaitSubstitution { owner: owner.clone(), parameter: parameter.clone(), concrete: concrete.clone() }));
+        }
+        match found.as_slice() {
+            [(index, reason, substitution)] => Some((
+                Target::Candidate(*index, reason.clone()),
+                substitution.clone(),
+            )),
+            _ => None,
+        }
+    }
+    pub(crate) fn await_substitution(
+        &self,
+        function: usize,
+        call: &Call,
+    ) -> Option<AwaitSubstitution> {
+        self.find_into_future_candidate(function, call.await_producer.as_ref()?)
+            .map(|(_, substitution)| substitution)
+    }
+    fn witnessed_associated_types(
+        &self,
+        trait_path: &[String],
+        concrete: &[String],
+        required: &BTreeSet<String>,
+    ) -> bool {
+        let Some([shape]) = self.traits.get(trait_path).map(Vec::as_slice) else {
+            return false;
+        };
+        if !shape.supported || !required.is_subset(&shape.associated_types) {
+            return false;
+        }
+        let mut matches = Vec::new();
+        for implementation in &self.impls {
+            if self
+                .in_scope(
+                    &implementation.scope,
+                    &implementation.imports,
+                    &implementation.trait_path,
+                )
+                .as_deref()
+                != Some(trait_path)
+            {
+                continue;
+            }
+            if implementation.generic_owner {
+                return false;
+            }
+            let owner = self
+                .in_scope(
+                    &implementation.scope,
+                    &implementation.imports,
+                    &implementation.owner,
+                )
+                .and_then(|path| self.struct_path(&path));
+            if owner.as_deref() == Some(concrete) {
+                if !implementation.supported {
+                    return false;
+                }
+                matches.push(implementation);
+            }
+        }
+        matches.as_slice().first().is_some_and(|implementation| {
+            matches.len() == 1 && required.is_subset(&implementation.associated_types)
+        })
+    }
+    pub(crate) fn same_substituted_owner(
+        &self,
+        caller: usize,
+        callee: usize,
+        substitution: &AwaitSubstitution,
+    ) -> bool {
+        let Some(a) = self.functions.get(caller) else {
+            return false;
+        };
+        let Some(b) = self.functions.get(callee) else {
+            return false;
+        };
+        a.flow.owner.is_some()
+            && a.flow.owner == b.flow.owner
+            && a.flow.type_parameters.contains(&substitution.parameter)
+            && b.flow.type_parameters.contains(&substitution.parameter)
+            && self.canonical(caller, &["Self".into()]).as_ref() == Some(&substitution.owner)
+            && self.canonical(callee, &["Self".into()]).as_ref() == Some(&substitution.owner)
     }
     fn resolve_receiver(
         &self,
@@ -553,6 +812,38 @@ impl Index {
             output => self.canonical(*target, &ty(output)?),
         }
     }
+}
+
+fn is_standard_future_trait(
+    index: &Index,
+    implementation: &super::receivers::TraitImpl,
+    name: &str,
+) -> bool {
+    let path = if let [name] = implementation.trait_path.as_slice() {
+        let Some([import]) = implementation.imports.get(name).map(Vec::as_slice) else {
+            return false;
+        };
+        import.as_slice()
+    } else {
+        implementation.trait_path.as_slice()
+    };
+    if path != ["std", "future", name] && path != ["core", "future", name] {
+        return false;
+    }
+    let root = &path[0];
+    if implementation.imports.contains_key(root) {
+        return false;
+    }
+    for length in 1..=implementation.scope.len() {
+        let mut local = implementation.scope[..length].to_vec();
+        local.push(root.clone());
+        if index.scopes.values().flatten().any(|scope| scope == &local)
+            || index.traits.keys().any(|path| path.starts_with(&local))
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub(super) fn normalize(

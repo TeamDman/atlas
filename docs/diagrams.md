@@ -245,6 +245,16 @@ implementations, conditional forms and unsupported generics remain boundaries.
 An expanded async body is a source view, not evidence that constructing a
 future ran its body. Await polling, scheduling and completion are not modeled.
 
+For a directly awaited method call on a written struct literal, Atlas may
+identify a unique written `IntoFuture` implementation when the method's
+return type wraps `Self` in one generic type parameter and the written trait
+and associated-type bounds are witnessed for that concrete type. The await
+site and substitution are retained as **source candidates**; lifetimes,
+external implementations and macro effects are not proved. The returned
+future's poll remains an explicit opaque boundary. The substitution can be
+carried to a `self` call on the same written generic owner; it is not inferred
+through arbitrary aliases, closures, future wrappers or dynamic dispatch.
+
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The
 hidden steps are still listed in the JSON evidence.

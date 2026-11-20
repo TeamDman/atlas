@@ -2,7 +2,7 @@
 use super::{Detail, ExitKind, LoopKind, Site, Step, Workflow, compact::Folds};
 use crate::{
     Result,
-    analysis::index::{Index, Target},
+    analysis::index::{AwaitSubstitution, Index, Target},
     diagram::{Coverage, Diagram, Edge, EdgeEvidence, Level, Node, View},
 };
 use std::fmt::Write as _;
@@ -48,6 +48,7 @@ struct Builder<'a> {
     targets: std::collections::BTreeMap<(usize, Site), Target>,
     /// One note per body-local declaration of every drawn body, once each.
     declared: Vec<String>,
+    substitution: Option<AwaitSubstitution>,
 }
 struct LoopTarget {
     name: Option<String>,
@@ -76,6 +77,7 @@ impl<'a> Builder<'a> {
             folds: (detail == Detail::Control).then(Folds::default),
             targets: std::collections::BTreeMap::new(),
             declared: Vec::new(),
+            substitution: None,
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -187,7 +189,18 @@ impl<'a> Builder<'a> {
                 self.declared.push(note);
             }
         }
-        let entry = self.node(&format!("fn {}", flow.function), &flow.site);
+        let entry_label = self.substitution.as_ref().map_or_else(
+            || format!("fn {}", flow.function),
+            |substitution| {
+                format!(
+                    "fn {}\n[source substitution {} = {}; not compiler proof]",
+                    flow.function,
+                    substitution.parameter,
+                    substitution.concrete.join("::")
+                )
+            },
+        );
+        let entry = self.node(&entry_label, &flow.site);
         let end = self.node(
             &format!("return from {} → {}", flow.function, flow.output),
             &flow.site,
@@ -208,6 +221,11 @@ impl<'a> Builder<'a> {
     fn call(&mut self, id: &str, site: &Site) -> Option<String> {
         let index = self.index?;
         let f = self.function?;
+        let implicit_await = index.functions()[f]
+            .flow
+            .calls
+            .iter()
+            .any(|call| &call.site == site && call.await_producer.is_some());
         let target = self.targets.get(&(f, site.clone()))?.clone();
         let (target, reason, candidate) = match target {
             Target::Function(j) if self.stack.contains(&j) => {
@@ -256,7 +274,26 @@ impl<'a> Builder<'a> {
             site,
         );
         let flow = index.functions()[j].flow.clone();
+        let previous = self.substitution.clone();
+        let source_call = index.functions()[f]
+            .flow
+            .calls
+            .iter()
+            .find(|call| &call.site == site);
+        self.substitution = source_call.and_then(|call| {
+            if implicit_await {
+                index.await_substitution(f, call)
+            } else if call.receiver.as_deref() == Some("self") {
+                previous
+                    .as_ref()
+                    .filter(|substitution| index.same_substituted_owner(f, j, substitution))
+                    .cloned()
+            } else {
+                None
+            }
+        });
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
+        self.substitution = previous;
         self.edge(
             id,
             &entry,
@@ -266,16 +303,25 @@ impl<'a> Builder<'a> {
                 "call"
             }),
         );
-        self.edge(
-            &exit,
-            &continuation,
-            Some(&format!(
-                "{}return to {}:{}",
-                if candidate { "candidate " } else { "" },
-                site.line,
-                site.column
-            )),
-        );
+        if implicit_await {
+            let poll = self.node(
+                "poll returned future [opaque; completion not guaranteed]",
+                site,
+            );
+            self.edge(&exit, &poll, Some("candidate returns future"));
+            self.edge(&poll, &continuation, Some("if polling completes"));
+        } else {
+            self.edge(
+                &exit,
+                &continuation,
+                Some(&format!(
+                    "{}return to {}:{}",
+                    if candidate { "candidate " } else { "" },
+                    site.line,
+                    site.column
+                )),
+            );
+        }
         Some(continuation)
     }
     fn steps(&mut self, steps: &[Step], mut tails: Vec<String>) -> Vec<String> {
