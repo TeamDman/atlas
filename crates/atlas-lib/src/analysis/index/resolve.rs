@@ -29,6 +29,38 @@ pub(super) fn ty(text: &str) -> Option<Vec<String>> {
     inner(&syn::parse_str(text).ok()?)
 }
 impl Index {
+    /// Refuse visible conflicts with the written, possibly prelude, FnOnce name.
+    pub(crate) fn callback_bound_unshadowed(&self, function: usize) -> bool {
+        let Some(f) = self.functions.get(function) else {
+            return false;
+        };
+        if f.flow
+            .local_names
+            .iter()
+            .any(|name| name == "FnOnce" || name == "*")
+            || f.flow.imports.contains_key("*")
+        {
+            return false;
+        }
+        if let Some(imports) = f.flow.imports.get("FnOnce") {
+            let [import] = imports.as_slice() else {
+                return false;
+            };
+            if import.as_slice() != ["std", "ops", "FnOnce"]
+                && import.as_slice() != ["core", "ops", "FnOnce"]
+            {
+                return false;
+            }
+        }
+        for length in 1..=f.scope.len() {
+            let mut path = f.scope[..length].to_vec();
+            path.push("FnOnce".into());
+            if self.traits.contains_key(&path) || self.structs.contains_key(&path) {
+                return false;
+            }
+        }
+        true
+    }
     pub(crate) fn scopes(&self, file: &str, module: &[String]) -> Vec<Vec<String>> {
         self.scopes
             .get(file)
@@ -197,6 +229,11 @@ impl Index {
         let Some(f) = self.functions.get(function) else {
             return Target::InvalidFunction(function);
         };
+        if let Some(name) = &call.awaited_value {
+            return Target::Summarized(format!(
+                "awaited callback {name}: source argument not mapped"
+            ));
+        }
         if let Some(producer) = &call.await_producer {
             return self.resolve_into_future(function, producer);
         }

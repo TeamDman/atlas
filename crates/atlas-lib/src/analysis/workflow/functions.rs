@@ -207,6 +207,7 @@ impl Reader<'_> {
             public_free_function: function.public_free,
             async_function: function.signature.asyncness.is_some(),
             type_parameters: function.parameters.clone(),
+            callback_parameters: super::facts::callback_parameters(function.signature),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),
             calls,

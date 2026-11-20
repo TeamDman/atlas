@@ -177,6 +177,33 @@ pub struct Call {
     /// Written call whose result is directly awaited at `site`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub await_producer: Option<Site>,
+    /// The written call is the direct operand of an await.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub directly_awaited: bool,
+    /// A zero-argument value call directly awaited at this site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub awaited_value: Option<String>,
+    /// Inline async closure arguments, retained without executing their bodies.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub async_closures: Vec<AsyncClosure>,
+}
+fn is_false(value: &bool) -> bool {
+    !value
+}
+/// Source-only inline closure whose directly returned async body is deferred.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct AsyncClosure {
+    pub argument: usize,
+    pub site: Site,
+    pub body: Vec<Step>,
+}
+/// A written zero-argument FnOnce-bound parameter and its argument position.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct CallbackParameter {
+    pub argument: usize,
+    pub name: String,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -209,6 +236,9 @@ pub struct Workflow {
     pub async_function: bool,
     #[serde(default)]
     pub type_parameters: Vec<String>,
+    /// Zero-argument callback parameters evidenced by written FnOnce bounds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub callback_parameters: Vec<CallbackParameter>,
     pub site: Site,
     pub steps: Vec<Step>,
     pub calls: Vec<Call>,

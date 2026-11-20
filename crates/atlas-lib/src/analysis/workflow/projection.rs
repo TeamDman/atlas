@@ -49,6 +49,7 @@ struct Builder<'a> {
     /// One note per body-local declaration of every drawn body, once each.
     declared: Vec<String>,
     substitution: Option<AwaitSubstitution>,
+    callbacks: std::collections::BTreeMap<String, super::AsyncClosure>,
 }
 struct LoopTarget {
     name: Option<String>,
@@ -78,6 +79,7 @@ impl<'a> Builder<'a> {
             targets: std::collections::BTreeMap::new(),
             declared: Vec::new(),
             substitution: None,
+            callbacks: std::collections::BTreeMap::new(),
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -221,6 +223,33 @@ impl<'a> Builder<'a> {
     fn call(&mut self, id: &str, site: &Site) -> Option<String> {
         let index = self.index?;
         let f = self.function?;
+        let source_call = index.functions()[f]
+            .flow
+            .calls
+            .iter()
+            .find(|call| &call.site == site);
+        if let Some(name) = source_call.and_then(|call| call.awaited_value.as_deref())
+            && let Some(closure) = self.callbacks.get(name).cloned()
+        {
+            let poll = self.node(
+                "poll callback's async future [source candidate; only if invoked and polled]",
+                &closure.site,
+            );
+            self.edge(id, &poll, Some("if invoked and polled"));
+            let end = self.node(
+                "callback async future completes (value or residual)",
+                &closure.site,
+            );
+            let outer_exit = std::mem::replace(&mut self.exit, end.clone());
+            let outer_loops = std::mem::take(&mut self.loops);
+            let outer_group = std::mem::replace(&mut self.group, closure.site.path.clone());
+            let ends = self.steps(&closure.body, vec![poll]);
+            self.connect(ends, &end);
+            self.group = outer_group;
+            self.loops = outer_loops;
+            self.exit = outer_exit;
+            return Some(end);
+        }
         let implicit_await = index.functions()[f]
             .flow
             .calls
@@ -263,6 +292,16 @@ impl<'a> Builder<'a> {
             }
             return Some(id.to_owned());
         };
+        let async_callback_target = index.functions()[j].flow.async_function
+            && !index.functions()[j].flow.callback_parameters.is_empty();
+        if async_callback_target && !source_call.is_some_and(|call| call.directly_awaited) {
+            if let Some(node) = self.nodes.iter_mut().find(|node| node.id == id) {
+                node.label.push_str(
+                    "\n[async future constructed; callback body not entered without direct await]",
+                );
+            }
+            return Some(id.to_owned());
+        }
         let continuation = self.node(
             &format!(
                 "after {}{} @ {}:{} (if returned)",
@@ -275,11 +314,30 @@ impl<'a> Builder<'a> {
         );
         let flow = index.functions()[j].flow.clone();
         let previous = self.substitution.clone();
-        let source_call = index.functions()[f]
-            .flow
-            .calls
-            .iter()
-            .find(|call| &call.site == site);
+        let old_callbacks = std::mem::take(&mut self.callbacks);
+        if async_callback_target
+            && index.callback_bound_unshadowed(j)
+            && let Some(call) = source_call
+        {
+            for parameter in &flow.callback_parameters {
+                let bindings = flow
+                    .bindings
+                    .iter()
+                    .filter(|binding| binding.name == parameter.name)
+                    .count();
+                if bindings == 1
+                    && let [closure] = call
+                        .async_closures
+                        .iter()
+                        .filter(|closure| closure.argument == parameter.argument)
+                        .collect::<Vec<_>>()
+                        .as_slice()
+                {
+                    self.callbacks
+                        .insert(parameter.name.clone(), (*closure).clone());
+                }
+            }
+        }
         self.substitution = source_call.and_then(|call| {
             if implicit_await {
                 index.await_substitution(f, call)
@@ -294,15 +352,25 @@ impl<'a> Builder<'a> {
         });
         let (entry, exit) = self.function(&flow, Some(j), self.depth - 1);
         self.substitution = previous;
-        self.edge(
-            id,
-            &entry,
-            Some(if candidate {
-                "source candidate"
-            } else {
-                "call"
-            }),
-        );
+        self.callbacks = old_callbacks;
+        if async_callback_target {
+            let poll = self.node(
+                "poll returned async function future [source candidate; completion not guaranteed]",
+                site,
+            );
+            self.edge(id, &poll, Some("if polled"));
+            self.edge(&poll, &entry, Some("source candidate"));
+        } else {
+            self.edge(
+                id,
+                &entry,
+                Some(if candidate {
+                    "source candidate"
+                } else {
+                    "call"
+                }),
+            );
+        }
         if implicit_await {
             let poll = self.node(
                 "poll returned future [opaque; completion not guaranteed]",

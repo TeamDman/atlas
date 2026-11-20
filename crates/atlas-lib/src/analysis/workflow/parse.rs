@@ -91,6 +91,15 @@ pub(super) struct Reader<'a> {
     unindexed_calls: bool,
 }
 impl Reader<'_> {
+    pub(super) fn deferred_block(&self, block: &syn::Block) -> Vec<Step> {
+        Reader {
+            source: self.source,
+            path: self.path,
+            selection: self.selection,
+            unindexed_calls: true,
+        }
+        .block(block)
+    }
     pub(super) fn site(&self, span: Span) -> Site {
         Site::at(self.path, span)
     }

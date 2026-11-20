@@ -1,5 +1,5 @@
 //! Calls and explicit bindings from the same AST as the ordered body projection.
-use super::{Binding, Call, Declared, parse::Reader};
+use super::{AsyncClosure, Binding, Call, CallbackParameter, Declared, parse::Reader};
 use std::collections::{BTreeMap, BTreeSet};
 use syn::{Expr, FnArg, Item, Pat, Signature, spanned::Spanned, visit::Visit};
 
@@ -47,6 +47,100 @@ fn pattern(pat: &Pat) -> Option<String> {
         _ => None,
     }
 }
+
+/// Retain only written zero-argument FnOnce bounds on direct type parameters.
+pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParameter> {
+    fn is_zero_arg_once(bound: &syn::TypeParamBound) -> bool {
+        let syn::TypeParamBound::Trait(bound) = bound else {
+            return false;
+        };
+        let Some(segment) = bound.path.segments.last() else {
+            return false;
+        };
+        let names: Vec<_> = bound
+            .path
+            .segments
+            .iter()
+            .map(|part| part.ident.to_string())
+            .collect();
+        (matches!(names.as_slice(), [name] if name == "FnOnce")
+            || matches!(names.as_slice(), [root, module, name] if (root == "std" || root == "core") && module == "ops" && name == "FnOnce"))
+            && matches!(&segment.arguments, syn::PathArguments::Parenthesized(args) if args.inputs.is_empty())
+    }
+    let mut names = BTreeSet::new();
+    for parameter in signature.generics.type_params() {
+        if parameter.bounds.iter().any(is_zero_arg_once) {
+            names.insert(parameter.ident.to_string());
+        }
+    }
+    if let Some(where_clause) = &signature.generics.where_clause {
+        for predicate in &where_clause.predicates {
+            if let syn::WherePredicate::Type(predicate) = predicate
+                && let syn::Type::Path(path) = &predicate.bounded_ty
+                && path.qself.is_none()
+                && let Some(name) = path.path.get_ident()
+                && signature
+                    .generics
+                    .type_params()
+                    .any(|parameter| parameter.ident == *name)
+                && predicate.bounds.iter().any(is_zero_arg_once)
+            {
+                names.insert(name.to_string());
+            }
+        }
+    }
+    signature
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            FnArg::Typed(arg) => Some(arg),
+            FnArg::Receiver(_) => None,
+        })
+        .enumerate()
+        .filter_map(|(argument, arg)| {
+            let syn::Type::Path(path) = &*arg.ty else {
+                return None;
+            };
+            let name = path.path.get_ident()?.to_string();
+            if path.qself.is_some() || !names.contains(&name) || !arg.attrs.is_empty() {
+                return None;
+            }
+            Some(CallbackParameter {
+                argument,
+                name: pattern(&arg.pat)?,
+            })
+        })
+        .collect()
+}
+
+fn async_closures(
+    reader: &Reader<'_>,
+    args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>,
+) -> Vec<AsyncClosure> {
+    args.iter()
+        .enumerate()
+        .filter_map(|(argument, expr)| {
+            let Expr::Closure(closure) = expr else {
+                return None;
+            };
+            if !closure.inputs.is_empty()
+                || !closure.attrs.is_empty()
+                || closure.asyncness.is_some()
+                || closure.constness.is_some()
+            {
+                return None;
+            }
+            let Expr::Async(body) = &*closure.body else {
+                return None;
+            };
+            Some(AsyncClosure {
+                argument,
+                site: reader.site(closure.span()),
+                body: reader.deferred_block(&body.block),
+            })
+        })
+        .collect()
+}
 pub(super) fn body(
     reader: &Reader<'_>,
     signature: &Signature,
@@ -58,6 +152,10 @@ pub(super) fn body(
         bindings: vec![],
         items: BTreeSet::new(),
         declared: vec![],
+        callback_names: callback_parameters(signature)
+            .into_iter()
+            .map(|parameter| parameter.name)
+            .collect(),
     };
     for arg in &signature.inputs {
         if let FnArg::Typed(arg) = arg
@@ -88,6 +186,7 @@ struct Facts<'a, 'b> {
     /// Names bound by items and `use` declarations inside the body.
     items: BTreeSet<String>,
     declared: Vec<Declared>,
+    callback_names: BTreeSet<String>,
 }
 /// The names a body-local item binds; `*` for a glob import. A macro
 /// definition binds no call path.
@@ -211,6 +310,9 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             site: self.reader.site(call.span()),
             awaited_block_call: false,
             await_producer: None,
+            directly_awaited: false,
+            awaited_value: None,
+            async_closures: async_closures(self.reader, &call.args),
         });
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -229,6 +331,9 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             site: self.reader.site(call.span()),
             awaited_block_call: false,
             await_producer: None,
+            directly_awaited: false,
+            awaited_value: None,
+            async_closures: async_closures(self.reader, &call.args),
         });
     }
     fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
@@ -243,6 +348,44 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             visitor.visit_block(&block.block);
         } else {
             syn::visit::visit_expr_await(self, awaited);
+            if let Expr::Call(call) = &*awaited.base {
+                let call_site = self.reader.site(call.span());
+                if let Some(observation) = self
+                    .calls
+                    .iter_mut()
+                    .find(|observation| observation.site == call_site)
+                {
+                    observation.directly_awaited = true;
+                }
+                if call.args.is_empty()
+                    && let Expr::Path(path) = &*call.func
+                    && path.qself.is_none()
+                    && let Some(name) = path.path.get_ident()
+                    && self.callback_names.contains(&name.to_string())
+                {
+                    self.calls.push(Call {
+                        spelling: name.to_string(),
+                        receiver: None,
+                        arguments: vec![],
+                        site: self.reader.site(awaited.span()),
+                        awaited_block_call: false,
+                        await_producer: None,
+                        directly_awaited: false,
+                        awaited_value: Some(name.to_string()),
+                        async_closures: vec![],
+                    });
+                }
+            }
+            if let Expr::MethodCall(call) = &*awaited.base {
+                let call_site = self.reader.site(call.span());
+                if let Some(observation) = self
+                    .calls
+                    .iter_mut()
+                    .find(|observation| observation.site == call_site)
+                {
+                    observation.directly_awaited = true;
+                }
+            }
             if let Expr::MethodCall(call) = &*awaited.base
                 && matches!(&*call.receiver, Expr::Struct(_))
             {
@@ -257,6 +400,9 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                     site: self.reader.site(awaited.span()),
                     awaited_block_call: false,
                     await_producer: Some(self.reader.site(call.span())),
+                    directly_awaited: false,
+                    awaited_value: None,
+                    async_closures: vec![],
                 });
             }
         }
@@ -323,6 +469,9 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                     site: self.reader.site(awaited.span()),
                     awaited_block_call: true,
                     await_producer: None,
+                    directly_awaited: false,
+                    awaited_value: None,
+                    async_closures: vec![],
                 });
             } else if let Some(call) = direct_path_call(&awaited.base)
                 && let Expr::Path(path) = &*call.func
@@ -342,6 +491,9 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                     site: self.reader.site(awaited.span()),
                     awaited_block_call: true,
                     await_producer: None,
+                    directly_awaited: false,
+                    awaited_value: None,
+                    async_closures: vec![],
                 });
             }
         }

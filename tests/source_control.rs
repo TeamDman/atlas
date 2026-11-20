@@ -74,6 +74,161 @@ fn builder_callback_inside_returned_future_stays_opaque() {
     assert!(!diagram.nodes.iter().any(|node| node.label == "fn handle"));
 }
 
+#[test]
+fn directly_awaited_generic_callback_enters_only_its_supplied_async_body() {
+    let source = "use std::future::Future; fn cancelled()->bool{false} async fn invoke<F,Fut>(callback:F) where F:FnOnce()->Fut, Fut:Future<Output=()> { if cancelled(){return;} callback().await; } async fn page(){} pub async fn entry(){ invoke(|| async { page().await; }).await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    let poll = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label.contains("poll callback's async future"))
+        .expect("callback poll gate");
+    assert!(
+        diagram.edges.iter().any(
+            |edge| edge.to == poll.id && edge.label.as_deref() == Some("if invoked and polled")
+        )
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("page().await"))
+    );
+    let ret = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "return")
+        .expect("cancellation return");
+    assert!(!reachable(&diagram, &ret.id, &poll.id));
+    let dropped = source.replace(
+        "invoke(|| async { page().await; }).await;",
+        "invoke(|| async { page().await; });",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &dropped)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let ignored = source.replace("callback().await;", "drop(callback);");
+    let (_, diagram) = inspect(&[("src/lib.rs", &ignored)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let shadowed = source.replace(
+        "callback().await;",
+        "let callback = other; callback().await;",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &shadowed)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let unrelated = source.replace(
+        "invoke(|| async { page().await; }).await;",
+        "invoke(other).await; let unused = || async { page().await; };",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &unrelated)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let wrong_argument = source
+        .replace(
+            "invoke<F,Fut>(callback:F)",
+            "invoke<F,Fut,G>(callback:F, unused:G)",
+        )
+        .replace(
+            "invoke(|| async { page().await; }).await;",
+            "invoke(other, || async { page().await; }).await;",
+        );
+    let (_, diagram) = inspect(&[("src/lib.rs", &wrong_argument)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let different_call = source.replace("callback().await;", "other().await;");
+    let (_, diagram) = inspect(&[("src/lib.rs", &different_call)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let nonstandard_bound = source.replace("F:FnOnce()", "F:fake::FnOnce()");
+    let (_, diagram) = inspect(&[("src/lib.rs", &nonstandard_bound)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let shadowed_trait = format!("trait FnOnce {{}} {source}");
+    let (_, diagram) = inspect(&[("src/lib.rs", &shadowed_trait)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let async_closure = source.replace(
+        "invoke(|| async { page().await; })",
+        "invoke(async || async { page().await; })",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &async_closure)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let callback_return = source.replace("page().await;", "return;");
+    let (_, diagram) = inspect(&[("src/lib.rs", &callback_return)], "entry", 2);
+    let end = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "callback async future completes (value or residual)")
+        .expect("callback exit");
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .filter(|node| node.label == "return")
+            .any(|node| diagram.edges.iter().any(|edge| edge.from == node.id
+                && edge.to == end.id
+                && edge.label.as_deref() == Some("transfer")))
+    );
+}
+
+#[test]
+fn directly_awaited_callback_residual_exits_its_future() {
+    let source = "use std::future::Future; fn fallible()->Result<(),()>{Ok(())} async fn invoke<F,Fut>(callback:F)->Result<(),()> where F:FnOnce()->Fut, Fut:Future<Output=Result<(),()>> { callback().await } pub async fn entry()->Result<(),()>{ invoke(|| async { fallible()?; Ok(()) }).await }";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    let end = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "callback async future completes (value or residual)")
+        .expect("callback exit");
+    let residual = diagram
+        .nodes
+        .iter()
+        .find(|node| node.label == "? returns early (residual)")
+        .expect("callback residual");
+    assert!(diagram.edges.iter().any(|edge| edge.from == residual.id
+        && edge.to == end.id
+        && edge.label.as_deref() == Some("return residual")));
+}
+
 fn inspect(files: &[(&str, &str)], function: &str, depth: u8) -> (Fixture, Diagram) {
     let f = Fixture::new(files);
     let m = cargo_metadata::MetadataCommand::new()

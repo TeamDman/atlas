@@ -262,6 +262,17 @@ candidate label. Macro effects, external alternatives, and generic constraints
 remain unknown; reassignment, ambiguity, and unsupported return shapes stop
 the chain.
 
+For a directly awaited async function, Atlas can connect a zero-argument
+`FnOnce` parameter to an inline zero-argument closure returning an async block,
+when the matching parameter is itself directly awaited. Both function and
+closure bodies are entered only along labeled poll possibilities; closure
+returns and residuals have their own future boundary. This is a written-source
+candidate, not type checking, an execution trace, or proof of completion.
+Unawaited functions, ignored or shadowed callbacks, indirect arguments, other
+arities, wrappers and indirect polling stay opaque. Calls within the opened
+closure body are displayed as opaque, rather than resolved from the callee's
+scope.
+
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The
 hidden steps are still listed in the JSON evidence.
