@@ -208,6 +208,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 .map(|a| self.reader.text(a.span()))
                 .collect(),
             site: self.reader.site(call.span()),
+            awaited_block_call: false,
         });
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -224,7 +225,22 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 .map(|a| self.reader.text(a.span()))
                 .collect(),
             site: self.reader.site(call.span()),
+            awaited_block_call: false,
         });
+    }
+    fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+        if let Some(block) = super::parse::direct_async(&awaited.base) {
+            let mut shadows = ShadowedNames::default();
+            shadows.visit_block(&block.block);
+            let mut visitor = AwaitedSelfCalls {
+                reader: self.reader,
+                calls: &mut self.calls,
+                shadows: shadows.0,
+            };
+            visitor.visit_block(&block.block);
+        } else {
+            syn::visit::visit_expr_await(self, awaited);
+        }
     }
     fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
     fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
@@ -247,5 +263,93 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
     fn visit_arm(&mut self, arm: &'ast syn::Arm) {
         self.visit_pat(&arm.pat);
         self.visit_expr(&arm.body);
+    }
+}
+
+/// Conservatively refuse a path if any binding anywhere in the block may
+/// shadow it. This can omit safe calls, but never assumes local scope wins.
+#[derive(Default)]
+struct ShadowedNames(BTreeSet<String>);
+impl<'ast> Visit<'ast> for ShadowedNames {
+    fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
+        self.0.insert(pat.ident.to_string());
+        syn::visit::visit_pat_ident(self, pat);
+    }
+    fn visit_item(&mut self, item: &'ast syn::Item) {
+        self.0.extend(item_names(item));
+    }
+}
+
+/// Direct awaits are anchored at their await site, not at future construction.
+struct AwaitedSelfCalls<'a, 'b, 'c> {
+    reader: &'a Reader<'b>,
+    calls: &'c mut Vec<Call>,
+    shadows: BTreeSet<String>,
+}
+impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
+    fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
+        if let Some(block) = super::parse::direct_async(&awaited.base) {
+            self.visit_block(&block.block);
+        } else {
+            syn::visit::visit_expr_await(self, awaited);
+            if let Some(call) = direct_self_call(&awaited.base) {
+                self.calls.push(Call {
+                    spelling: call.method.to_string(),
+                    receiver: Some("self".into()),
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|a| self.reader.text(a.span()))
+                        .collect(),
+                    site: self.reader.site(awaited.span()),
+                    awaited_block_call: true,
+                });
+            } else if let Some(call) = direct_path_call(&awaited.base)
+                && let Expr::Path(path) = &*call.func
+                && let Some(first) = path.path.segments.first()
+                && !self.shadows.contains(&first.ident.to_string())
+                && (!self.shadows.contains("*")
+                    || matches!(first.ident.to_string().as_str(), "crate" | "self" | "super"))
+            {
+                self.calls.push(Call {
+                    spelling: self.reader.text(call.func.span()),
+                    receiver: None,
+                    arguments: call
+                        .args
+                        .iter()
+                        .map(|a| self.reader.text(a.span()))
+                        .collect(),
+                    site: self.reader.site(awaited.span()),
+                    awaited_block_call: true,
+                });
+            }
+        }
+    }
+    fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+    fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+    fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+    fn visit_expr_const(&mut self, _: &'ast syn::ExprConst) {}
+    fn visit_item(&mut self, _: &'ast syn::Item) {}
+}
+
+fn direct_path_call(expr: &Expr) -> Option<&syn::ExprCall> {
+    match expr {
+        Expr::Call(call) if matches!(&*call.func, Expr::Path(path) if path.qself.is_none()) => {
+            Some(call)
+        }
+        Expr::Paren(inner) => direct_path_call(&inner.expr),
+        Expr::Group(inner) => direct_path_call(&inner.expr),
+        _ => None,
+    }
+}
+
+fn direct_self_call(expr: &Expr) -> Option<&syn::ExprMethodCall> {
+    match expr {
+        Expr::MethodCall(call) if matches!(&*call.receiver, Expr::Path(p) if p.qself.is_none() && p.path.is_ident("self")) => {
+            Some(call)
+        }
+        Expr::Paren(inner) => direct_self_call(&inner.expr),
+        Expr::Group(inner) => direct_self_call(&inner.expr),
+        _ => None,
     }
 }

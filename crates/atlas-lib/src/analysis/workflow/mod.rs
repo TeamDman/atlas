@@ -171,6 +171,9 @@ pub struct Call {
     pub receiver: Option<String>,
     pub arguments: Vec<String>,
     pub site: Site,
+    /// A directly awaited source call inside a directly awaited block.
+    #[serde(default)]
+    pub awaited_block_call: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -198,6 +201,9 @@ pub struct Workflow {
     /// A free function written with unrestricted `pub` visibility.
     #[serde(default)]
     pub public_free_function: bool,
+    /// Whether this body is written as an `async fn`.
+    #[serde(default)]
+    pub async_function: bool,
     #[serde(default)]
     pub type_parameters: Vec<String>,
     pub site: Site,

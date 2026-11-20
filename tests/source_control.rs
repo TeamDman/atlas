@@ -233,6 +233,120 @@ fn glob_candidate_crosses_packages_and_is_recomputed_after_source_changes() {
 }
 
 #[test]
+fn direct_self_calls_in_awaited_blocks_are_bounded_source_candidates() {
+    let (_, diagram) = inspect(
+        &[(
+            "src/lib.rs",
+            "struct H; impl H { pub async fn run(&self) { async { self.page::<u8>().await; }.await; } async fn page<T>(&self) {} }",
+        )],
+        "H::run",
+        1,
+    );
+    assert!(diagram.nodes.iter().any(|n| n.label == "fn H::page"));
+    assert!(diagram.edges.iter().any(|e| {
+        e.label.as_deref() == Some("source candidate")
+            && diagram
+                .nodes
+                .iter()
+                .any(|n| n.id == e.from && n.label.contains("self.page::<u8>().await"))
+    }));
+    let (_, deferred) = inspect(
+        &[(
+            "src/lib.rs",
+            "struct H; impl H { pub async fn run(&self) { let later = async { self.page::<u8>().await }; let callback = || self.page::<u8>(); } async fn page<T>(&self) {} }",
+        )],
+        "H::run",
+        1,
+    );
+    assert!(!deferred.nodes.iter().any(|n| n.label == "fn H::page"));
+    let (_, dropped_future) = inspect(
+        &[(
+            "src/lib.rs",
+            "struct H; impl H { pub async fn run(&self) { async { self.page::<u8>(); }.await; } async fn page<T>(&self) {} }",
+        )],
+        "H::run",
+        1,
+    );
+    assert!(!dropped_future.nodes.iter().any(|n| n.label == "fn H::page"));
+    let (_, sync_constructor) = inspect(
+        &[(
+            "src/lib.rs",
+            "struct H; impl H { pub async fn run(&self) { async { self.page().await; }.await; } fn page(&self) -> impl Future<Output=()> { async {} } }",
+        )],
+        "H::run",
+        1,
+    );
+    assert!(
+        !sync_constructor
+            .nodes
+            .iter()
+            .any(|n| n.label == "fn H::page")
+    );
+    let (_, trait_only) = inspect(
+        &[(
+            "src/lib.rs",
+            "trait T { async fn page(&self) {} } struct H; impl T for H {} impl H { pub async fn run(&self) { async { self.page().await; }.await; } }",
+        )],
+        "H::run",
+        1,
+    );
+    assert!(!trait_only.nodes.iter().any(|n| n.label == "fn T::page"));
+    assert!(
+        !trait_only
+            .edges
+            .iter()
+            .any(|e| e.label.as_deref() == Some("source candidate"))
+    );
+}
+
+#[test]
+fn awaited_paths_in_async_blocks_refuse_shadowed_and_sync_targets() {
+    let (_, diagram) = inspect(
+        &[(
+            "src/lib.rs",
+            "async fn page() {} pub async fn run() { async { page().await; }.await; }",
+        )],
+        "run",
+        1,
+    );
+    assert!(diagram.nodes.iter().any(|n| n.label == "fn page"));
+    assert!(diagram.edges.iter().any(|e| {
+        e.label.as_deref() == Some("source candidate")
+            && diagram
+                .nodes
+                .iter()
+                .any(|n| n.id == e.from && n.label.contains("page().await"))
+    }));
+    let (_, shadowed) = inspect(
+        &[(
+            "src/lib.rs",
+            "async fn page() {} pub async fn run() { async { let page = || async {}; page().await; }.await; }",
+        )],
+        "run",
+        1,
+    );
+    assert!(!shadowed.nodes.iter().any(|n| n.label == "fn page"));
+    let (_, sync_constructor) = inspect(
+        &[(
+            "src/lib.rs",
+            "fn page() -> impl Future<Output=()> { async {} } pub async fn run() { async { page().await; }.await; }",
+        )],
+        "run",
+        1,
+    );
+    assert!(!sync_constructor.nodes.iter().any(|n| n.label == "fn page"));
+    let (_, dropped) = inspect(
+        &[(
+            "src/lib.rs",
+            "async fn page() {} pub async fn run() { async { page(); }.await; }",
+        )],
+        "run",
+        1,
+    );
+    assert!(!dropped.nodes.iter().any(|n| n.label == "fn page"));
+}
+
+#[test]
 fn trait_defaults_and_overrides_are_explicit_source_candidates() {
     let (_, d) = inspect(
         &[

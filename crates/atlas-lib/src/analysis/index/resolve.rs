@@ -225,6 +225,16 @@ impl Index {
                 );
             }
         }
+        if call.awaited_block_call {
+            let target = self
+                .canonical(function, &p)
+                .map(|path| self.classify(&path));
+            return match target {
+                Some(Target::Function(index) | Target::Candidate(index, _))
+                    if self.functions[index].flow.async_function => Target::Candidate(index, "directly awaited source path with a unique written async body; macro-generated and external alternatives are not ruled out".into()),
+                _ => Target::Summarized("awaited-block path has no unique written async body".into()),
+            };
+        }
         self.canonical(function, &p).map_or_else(
             || Target::Summarized("ambiguous source import".into()),
             |p| self.classify(&p),
@@ -237,6 +247,21 @@ impl Index {
         receiver: &str,
         call: &Call,
     ) -> Target {
+        if call.awaited_block_call {
+            if receiver != "self" {
+                return Target::Summarized("unsupported awaited-block receiver".into());
+            }
+            let target = self.canonical(function, &["Self".into(), call.spelling.clone()]);
+            return match target.map(|p| self.classify(&p)) {
+                Some(Target::Function(index))
+                    if (self.functions[index].inherent || self.functions[index].generic_inherent)
+                        && self.functions[index].flow.async_function =>
+                {
+                    Target::Candidate(index, "directly awaited self call in an awaited async block with a unique written inherent async body; macro-generated and external alternatives are not ruled out".into())
+                }
+                _ => Target::Summarized("awaited-block self call has no unique written inherent body".into()),
+            };
+        }
         if let Ok(expr) = syn::parse_str::<syn::Expr>(receiver) {
             match expr {
                 syn::Expr::Struct(s)

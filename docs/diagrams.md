@@ -221,8 +221,10 @@ Macro calls, closures, unawaited `async` blocks, `try` blocks and syntax Atlas
 does not support are opaque, and Atlas does not guess what they do. A directly
 awaited `async { ... }.await` shows a separate construction, poll body, and
 completion: `return` and `?` within that body complete the async block, while
-an outer `?` can propagate its result. Calls inside that block are marked
-opaque and are not indexed for expansion. An `unsafe` block
+an outer `?` can propagate its result. A directly awaited `self.method()` or
+unshadowed written function path in that block may open a unique written
+`async fn` body as a source candidate at the await; other calls remain opaque
+and unindexed. An `unsafe` block
 shows its steps after a marker that names the line where the block ends. A
 labelled block (`'found: { ... }`) shows its steps, and `break 'found` leaves
 it. Other `x.await` forms show `x`'s steps, then one await step; polling

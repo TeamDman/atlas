@@ -46,6 +46,7 @@ pub(super) struct TraitImpl {
 pub(in crate::analysis) struct ReceiverFacts {
     structs: BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: BTreeSet<Site>,
+    generic_inherent: BTreeSet<Site>,
     traits: BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: Vec<TraitImpl>,
 }
@@ -64,6 +65,7 @@ pub(in crate::analysis) fn read(
         file,
         &mut facts.structs,
         &mut facts.inherent,
+        &mut facts.generic_inherent,
         &mut facts.traits,
         &mut facts.impls,
     );
@@ -87,6 +89,7 @@ fn collect(
     file: &str,
     structs: &mut BTreeMap<Vec<String>, Vec<StructShape>>,
     inherent: &mut BTreeSet<Site>,
+    generic_inherent: &mut BTreeSet<Site>,
     traits: &mut BTreeMap<Vec<String>, Vec<TraitShape>>,
     impls: &mut Vec<TraitImpl>,
 ) {
@@ -101,7 +104,15 @@ fn collect(
                 child.push(m.ident.to_string());
                 if let Some((_, nested)) = &m.content {
                     collect(
-                        nested, &child, selection, file, structs, inherent, traits, impls,
+                        nested,
+                        &child,
+                        selection,
+                        file,
+                        structs,
+                        inherent,
+                        generic_inherent,
+                        traits,
+                        impls,
                     );
                 }
             }
@@ -155,9 +166,13 @@ fn collect(
                         && selection.admits(f.span())
                         && !conditional(&f.attrs)
                         && f.sig.receiver().is_some()
-                        && f.sig.generics.type_params().next().is_none()
                     {
-                        inherent.insert(Site::at(file, f.sig.span()));
+                        let sites = if f.sig.generics.type_params().next().is_none() {
+                            &mut *inherent
+                        } else {
+                            &mut *generic_inherent
+                        };
+                        sites.insert(Site::at(file, f.sig.span()));
                     }
                 }
             }
@@ -278,6 +293,8 @@ impl Index {
                     self.structs.entry(key).or_default().extend(shapes);
                 }
                 self.inherent_sites.extend(facts.inherent.iter().cloned());
+                self.generic_inherent_sites
+                    .extend(facts.generic_inherent.iter().cloned());
                 for (path, shapes) in &facts.traits {
                     let key = scope.iter().chain(path).cloned().collect();
                     self.traits

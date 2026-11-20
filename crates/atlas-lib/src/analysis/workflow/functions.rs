@@ -196,7 +196,7 @@ impl Reader<'_> {
             "Branches and loops show syntax, not feasibility, iteration counts or a control-flow proof.",
             "Each ? is a distinct residual decision after its operand, including conditions and return expressions.",
             "Macros, closures, deferred bodies and unsupported expressions are opaque; their effects are not inferred.",
-            "Directly awaited async blocks show their body with a separate result boundary; calls inside that body are not indexed for expansion.",
+            "Directly awaited async blocks have a separate result boundary; directly awaited self calls and unshadowed paths within them may be source candidates.",
         ];
 
         Workflow {
@@ -205,6 +205,7 @@ impl Reader<'_> {
             module: function.module.clone(),
             owner: function.owner.clone(),
             public_free_function: function.public_free,
+            async_function: function.signature.asyncness.is_some(),
             type_parameters: function.parameters.clone(),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),

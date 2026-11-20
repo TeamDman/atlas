@@ -579,7 +579,7 @@ fn expr_attrs(expr: &Expr) -> &[syn::Attribute] {
     )
 }
 
-fn direct_async(expr: &Expr) -> Option<&syn::ExprAsync> {
+pub(super) fn direct_async(expr: &Expr) -> Option<&syn::ExprAsync> {
     match expr {
         Expr::Async(block) => Some(block),
         Expr::Paren(inner) => direct_async(&inner.expr),
@@ -817,12 +817,12 @@ mod tests {
                 |step| matches!(step, Step::Opaque { label, .. } if label.contains("visible()") && label.contains("not indexed"))
             )
         );
-        // Facts from deferred bodies are not promoted to enclosing call targets.
+        // Unpolled bodies stay opaque; a directly awaited path is a candidate.
+        assert!(!flow.calls.iter().any(|call| call.spelling == "hidden"));
         assert!(
-            !flow
-                .calls
+            flow.calls
                 .iter()
-                .any(|call| call.spelling == "hidden" || call.spelling == "visible")
+                .any(|call| call.spelling == "visible" && call.awaited_block_call)
         );
     }
     #[test]

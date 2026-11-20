@@ -28,6 +28,7 @@ pub struct Function {
     pub scope: Vec<String>,
     pub flow: Workflow,
     inherent: bool,
+    generic_inherent: bool,
     default_body: bool,
 }
 #[non_exhaustive]
@@ -61,6 +62,7 @@ pub struct Index {
     exports: BTreeMap<Vec<String>, Vec<Vec<String>>>,
     structs: BTreeMap<Vec<String>, Vec<receivers::StructShape>>,
     inherent_sites: BTreeSet<super::workflow::Site>,
+    generic_inherent_sites: BTreeSet<super::workflow::Site>,
     traits: BTreeMap<Vec<String>, Vec<receivers::TraitShape>>,
     impls: Vec<receivers::TraitImpl>,
 }
@@ -149,6 +151,7 @@ impl Index {
             exports: BTreeMap::new(),
             structs: BTreeMap::new(),
             inherent_sites: BTreeSet::new(),
+            generic_inherent_sites: BTreeSet::new(),
             traits: BTreeMap::new(),
             impls: Vec::new(),
         };
