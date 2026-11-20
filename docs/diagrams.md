@@ -279,9 +279,11 @@ closure bodies are entered only along labeled poll possibilities; closure
 returns and residuals have their own future boundary. This is a written-source
 candidate, not type checking, an execution trace, or proof of completion.
 Unawaited functions, ignored or shadowed callbacks, indirect arguments,
-destructuring parameters, wrappers and indirect polling stay opaque. Calls within the opened
-closure body are displayed as opaque, rather than resolved from the callee's
-scope.
+destructuring parameters, wrappers and indirect polling stay opaque. Within an
+opened closure, a direct await of an unshadowed callback captured from the
+originating function can open that callback's own future behind a second poll
+gate. Other calls in the closure body remain opaque rather than being resolved
+from the callee's scope. Cancellation and completion are not inferred.
 
 **Less detail.** `--detail control` hides small borrow steps (`&text`) and the
 extra steps Atlas adds for `?`, leaving branches, loops, calls and exits. The

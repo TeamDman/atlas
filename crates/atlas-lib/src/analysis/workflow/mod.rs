@@ -205,6 +205,9 @@ pub struct AsyncClosure {
     pub parameters: Vec<String>,
     pub site: Site,
     pub body: Vec<Step>,
+    /// Direct awaits of unshadowed callbacks captured from the enclosing body.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub awaited_callbacks: Vec<Call>,
 }
 /// A written FnOnce-bound parameter, its position and argument count.
 #[derive(Debug, Clone, Serialize, Deserialize)]

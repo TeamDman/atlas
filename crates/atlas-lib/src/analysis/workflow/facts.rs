@@ -129,6 +129,7 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
 fn async_closures(
     reader: &Reader<'_>,
     args: &syn::punctuated::Punctuated<Expr, syn::Token![,]>,
+    callback_names: &BTreeSet<String>,
 ) -> Vec<AsyncClosure> {
     args.iter()
         .enumerate()
@@ -162,11 +163,28 @@ fn async_closures(
             if parameters.iter().collect::<BTreeSet<_>>().len() != parameters.len() {
                 return None;
             }
+            let mut shadows = ShadowedNames::default();
+            shadows.visit_block(&body.block);
+            shadows.0.extend(parameters.iter().cloned());
+            let mut visitor = Facts {
+                reader,
+                calls: vec![],
+                bindings: vec![],
+                items: BTreeSet::new(),
+                declared: vec![],
+                callback_names: callback_names.difference(&shadows.0).cloned().collect(),
+            };
+            visitor.visit_block(&body.block);
             Some(AsyncClosure {
                 argument,
                 parameters,
                 site: reader.site(closure.span()),
                 body: reader.deferred_block(&body.block),
+                awaited_callbacks: visitor
+                    .calls
+                    .into_iter()
+                    .filter(|call| call.awaited_value.is_some())
+                    .collect(),
             })
         })
         .collect()
@@ -343,7 +361,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             directly_awaited: false,
             awaited_value: None,
             awaited_arity: 0,
-            async_closures: async_closures(self.reader, &call.args),
+            async_closures: async_closures(self.reader, &call.args, &self.callback_names),
         });
     }
     fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
@@ -365,7 +383,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             directly_awaited: false,
             awaited_value: None,
             awaited_arity: 0,
-            async_closures: async_closures(self.reader, &call.args),
+            async_closures: async_closures(self.reader, &call.args, &self.callback_names),
         });
     }
     fn visit_expr_await(&mut self, awaited: &'ast syn::ExprAwait) {
@@ -469,6 +487,14 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
 #[derive(Default)]
 struct ShadowedNames(BTreeSet<String>);
 impl<'ast> Visit<'ast> for ShadowedNames {
+    fn visit_expr_assign(&mut self, assignment: &'ast syn::ExprAssign) {
+        if let Expr::Path(path) = assignment.left.as_ref()
+            && let Some(name) = path.path.get_ident()
+        {
+            self.0.insert(name.to_string());
+        }
+        syn::visit::visit_expr_assign(self, assignment);
+    }
     fn visit_pat_ident(&mut self, pat: &'ast syn::PatIdent) {
         self.0.insert(pat.ident.to_string());
         syn::visit::visit_pat_ident(self, pat);

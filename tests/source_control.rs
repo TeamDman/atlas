@@ -61,6 +61,142 @@ fn builder_chain_uses_written_self_returns_and_preserves_uncertainty() {
 }
 
 #[test]
+fn captured_callback_in_a_polled_nested_closure_keeps_its_origin() {
+    let source = "use std::future::Future; async fn inner<G,GF>(factory:G) where G:FnOnce()->GF, GF:Future<Output=()> { factory().await; } async fn outer<F,FF>(invoke:F) where F:FnOnce()->FF, FF:Future<Output=()> { inner(|| async move { invoke().await; }).await; } pub async fn entry(){ outer(|| async { finish(); }).await; } fn finish(){}";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 4);
+    assert_eq!(
+        diagram
+            .nodes
+            .iter()
+            .filter(|n| n.label.contains("poll callback's async future"))
+            .count(),
+        2
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.starts_with("[opaque] finish()"))
+    );
+    let unpolled = source.replace(
+        "inner(|| async move { invoke().await; }).await;",
+        "drop(inner(|| async move { invoke().await; }));",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &unpolled)], "entry", 4);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.starts_with("[opaque] finish()"))
+    );
+    let shadowed = source.replace(
+        "invoke().await; }).await;",
+        "let invoke = || async {}; invoke().await; }).await;",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &shadowed)], "entry", 4);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.starts_with("[opaque] finish()"))
+    );
+    let ignored = source.replace("factory().await;", "drop(factory);");
+    let (_, diagram) = inspect(&[("src/lib.rs", &ignored)], "entry", 4);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.starts_with("[opaque] finish()"))
+    );
+    let overwritten = source.replace(
+        "invoke().await; }).await;",
+        "invoke = other; invoke().await; }).await;",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &overwritten)], "entry", 4);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|n| n.label.starts_with("[opaque] finish()"))
+    );
+}
+
+#[test]
+fn captured_callback_crosses_a_crate_only_after_admission_and_poll() {
+    let app = "use std::future::Future; async fn outer<F,FF>(invoke:F) where F:FnOnce()->FF, FF:Future<Output=()> { domain::inner(|| async move { invoke().await; }).await; } pub async fn entry(){ outer(|| async { finish(); }).await; } fn finish(){}";
+    let domain = "use std::future::Future; pub async fn inner<G,GF>(factory:G) where G:FnOnce()->GF, GF:Future<Output=()> { if cancelled(){return;} factory().await; } fn cancelled()->bool{false}";
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        ("app/src/lib.rs", app),
+        ("domain/src/lib.rs", domain),
+    ]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--workspace", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .expect("compile fixture");
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(fixture.path())
+        .no_deps()
+        .exec()
+        .expect("metadata");
+    let graph = discovery::scan_metadata(&metadata).expect("discovery");
+    let (_, diagram) = workflow::expanded(
+        fixture.path(),
+        &metadata,
+        &graph,
+        "app/src/lib.rs",
+        "entry",
+        4,
+    )
+    .expect("flow");
+    let finish = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label.starts_with("[opaque] finish()"))
+        .expect("nested callback body");
+    let rejection = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label == "return")
+        .expect("early cancellation return");
+    assert!(!reachable(&diagram, &rejection.id, &finish.id));
+    let entry = diagram
+        .nodes
+        .iter()
+        .find(|n| n.label == "fn entry")
+        .expect("entry");
+    let gates: Vec<_> = diagram
+        .nodes
+        .iter()
+        .filter(|n| n.label.contains("poll callback's async future"))
+        .collect();
+    assert_eq!(gates.len(), 2);
+    for gate in gates {
+        assert!(!reachable_without(
+            &diagram, &entry.id, &finish.id, &gate.id
+        ));
+    }
+}
+
+#[test]
 fn builder_callback_inside_returned_future_stays_opaque() {
     let source = "use std::future::Future; struct App; impl App { fn new()->Self{Self} fn setup(self)->Self{self} fn run<F, Fut>(self, invoke:F) where F:FnOnce()->Fut, Fut:Future<Output=()> { let future=Box::pin(async move { invoke().await }); wait(future); } } async fn handle(){} fn wait<T>(_future:T){} pub fn entry(){App::new().setup().run(|| async {handle().await});}";
     let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);

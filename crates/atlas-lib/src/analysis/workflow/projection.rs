@@ -5,7 +5,7 @@ use crate::{
     analysis::index::{AwaitSubstitution, Index, Target},
     diagram::{Coverage, Diagram, Edge, EdgeEvidence, Level, Node, View},
 };
-use std::fmt::Write as _;
+use std::{fmt::Write as _, rc::Rc};
 
 pub(super) fn diagram(flow: &Workflow) -> Diagram {
     let mut b = Builder::new(None, usize::MAX, Detail::Expressions);
@@ -49,7 +49,13 @@ struct Builder<'a> {
     /// One note per body-local declaration of every drawn body, once each.
     declared: Vec<String>,
     substitution: Option<AwaitSubstitution>,
-    callbacks: std::collections::BTreeMap<String, super::AsyncClosure>,
+    callbacks: std::collections::BTreeMap<String, Rc<CallbackBinding>>,
+    deferred_calls: Option<Vec<super::Call>>,
+}
+struct CallbackBinding {
+    closure: super::AsyncClosure,
+    origin: usize,
+    captured: std::collections::BTreeMap<String, Rc<Self>>,
 }
 struct LoopTarget {
     name: Option<String>,
@@ -80,6 +86,7 @@ impl<'a> Builder<'a> {
             declared: Vec::new(),
             substitution: None,
             callbacks: std::collections::BTreeMap::new(),
+            deferred_calls: None,
         }
     }
     fn checked(self, flow: &Workflow) -> Result<Diagram> {
@@ -223,16 +230,20 @@ impl<'a> Builder<'a> {
     fn call(&mut self, id: &str, site: &Site) -> Option<String> {
         let index = self.index?;
         let f = self.function?;
-        let source_call = index.functions()[f]
-            .flow
-            .calls
+        let source_call = self
+            .deferred_calls
+            .as_deref()
+            .unwrap_or(&index.functions()[f].flow.calls)
             .iter()
-            .find(|call| &call.site == site);
+            .find(|call| &call.site == site)
+            .cloned();
+        let source_call = source_call.as_ref();
         if let Some(call) = source_call
             && let Some(name) = call.awaited_value.as_deref()
-            && let Some(closure) = self.callbacks.get(name).cloned()
-            && closure.parameters.len() == call.awaited_arity
+            && let Some(binding) = self.callbacks.get(name).cloned()
+            && binding.closure.parameters.len() == call.awaited_arity
         {
+            let closure = binding.closure.clone();
             let poll = self.node(
                 "poll callback's async future [source candidate; only if invoked and polled]",
                 &closure.site,
@@ -245,12 +256,23 @@ impl<'a> Builder<'a> {
             let outer_exit = std::mem::replace(&mut self.exit, end.clone());
             let outer_loops = std::mem::take(&mut self.loops);
             let outer_group = std::mem::replace(&mut self.group, closure.site.path.clone());
+            let outer_function = self.function.replace(binding.origin);
+            let outer_calls = self.deferred_calls.replace(closure.awaited_callbacks);
+            let outer_callbacks = std::mem::replace(&mut self.callbacks, binding.captured.clone());
             let ends = self.steps(&closure.body, vec![poll]);
             self.connect(ends, &end);
+            self.callbacks = outer_callbacks;
+            self.deferred_calls = outer_calls;
+            self.function = outer_function;
             self.group = outer_group;
             self.loops = outer_loops;
             self.exit = outer_exit;
             return Some(end);
+        }
+        // Only the captured callback awaits were indexed in this deferred body.
+        // Other calls keep their opaque source representation.
+        if self.deferred_calls.is_some() {
+            return None;
         }
         let implicit_await = index.functions()[f]
             .flow
@@ -360,8 +382,14 @@ impl<'a> Builder<'a> {
                         .collect::<Vec<_>>()
                         .as_slice()
                 {
-                    self.callbacks
-                        .insert(parameter.name.clone(), (*closure).clone());
+                    self.callbacks.insert(
+                        parameter.name.clone(),
+                        Rc::new(CallbackBinding {
+                            closure: (*closure).clone(),
+                            origin: f,
+                            captured: old_callbacks.clone(),
+                        }),
+                    );
                 }
             }
         }
