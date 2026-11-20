@@ -180,9 +180,12 @@ pub struct Call {
     /// The written call is the direct operand of an await.
     #[serde(default, skip_serializing_if = "is_false")]
     pub directly_awaited: bool,
-    /// A zero-argument value call directly awaited at this site.
+    /// A value call directly awaited at this site.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub awaited_value: Option<String>,
+    /// Number of written arguments to the awaited value call.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub awaited_arity: usize,
     /// Inline async closure arguments, retained without executing their bodies.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub async_closures: Vec<AsyncClosure>,
@@ -190,20 +193,27 @@ pub struct Call {
 fn is_false(value: &bool) -> bool {
     !value
 }
+fn is_zero(value: &usize) -> bool {
+    *value == 0
+}
 /// Source-only inline closure whose directly returned async body is deferred.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct AsyncClosure {
     pub argument: usize,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parameters: Vec<String>,
     pub site: Site,
     pub body: Vec<Step>,
 }
-/// A written zero-argument FnOnce-bound parameter and its argument position.
+/// A written FnOnce-bound parameter, its position and argument count.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct CallbackParameter {
     pub argument: usize,
     pub name: String,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub arity: usize,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -236,7 +246,7 @@ pub struct Workflow {
     pub async_function: bool,
     #[serde(default)]
     pub type_parameters: Vec<String>,
-    /// Zero-argument callback parameters evidenced by written FnOnce bounds.
+    /// Callback parameters evidenced by written FnOnce bounds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callback_parameters: Vec<CallbackParameter>,
     pub site: Site,

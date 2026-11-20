@@ -229,6 +229,87 @@ fn directly_awaited_callback_residual_exits_its_future() {
         && edge.label.as_deref() == Some("return residual")));
 }
 
+#[test]
+fn awaited_callback_requires_matching_written_argument_arity() {
+    let source = "use std::future::Future; async fn invoke<F,Fut>(callback:F) where F:FnOnce(u8,u8)->Fut, Fut:Future<Output=()> { callback(1,2).await; } async fn page(_:u8,_:u8){} pub async fn entry(){ invoke(|cli, context| async move { page(cli,context).await; }).await; }";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("page(cli,context).await"))
+    );
+    let wrong_invoke = source.replace("callback(1,2).await", "callback(1).await");
+    let (_, diagram) = inspect(&[("src/lib.rs", &wrong_invoke)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let wrong_closure = source.replace("|cli, context|", "|cli|");
+    let (_, diagram) = inspect(&[("src/lib.rs", &wrong_closure)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let unsupported_pattern = source.replace("|cli, context|", "|(cli, context)|");
+    let (_, diagram) = inspect(&[("src/lib.rs", &unsupported_pattern)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    let competing_bounds = source.replace(
+        "F:FnOnce(u8,u8)->Fut",
+        "F:FnOnce(u8)->Fut + FnOnce(u8,u8)->Fut",
+    );
+    let (_, diagram) = inspect(&[("src/lib.rs", &competing_bounds)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+}
+
+#[test]
+fn synchronous_callback_match_is_construction_only_without_poll_proof() {
+    let source = "use std::future::Future; fn invoke<F,Fut>(value:u8, callback:F) where F:FnOnce(u8,u8)->Fut, Fut:Future<Output=()> { drop((value,callback)); } pub fn entry(){ invoke(1, |cli, context| async move { consume(cli,context); }); } fn consume(_:u8,_:u8){}";
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 2);
+    assert!(diagram.nodes.iter().any(|node| {
+        node.label
+            .contains("callback argument 2 matches FnOnce parameter callback with 2 arguments")
+            && node
+                .label
+                .contains("invocation and polling not established")
+    }));
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll callback's async future"))
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn consume"));
+    let wrong_arity = source.replace("|cli, context|", "|cli|");
+    let (_, diagram) = inspect(&[("src/lib.rs", &wrong_arity)], "entry", 2);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("written callback argument"))
+    );
+}
+
 fn inspect(files: &[(&str, &str)], function: &str, depth: u8) -> (Fixture, Diagram) {
     let f = Fixture::new(files);
     let m = cargo_metadata::MetadataCommand::new()

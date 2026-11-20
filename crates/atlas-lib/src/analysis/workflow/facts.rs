@@ -48,29 +48,36 @@ fn pattern(pat: &Pat) -> Option<String> {
     }
 }
 
-/// Retain only written zero-argument FnOnce bounds on direct type parameters.
+/// Retain uniquely written FnOnce arities on direct type parameters.
 pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParameter> {
-    fn is_zero_arg_once(bound: &syn::TypeParamBound) -> bool {
+    fn once_arity(bound: &syn::TypeParamBound) -> Option<usize> {
         let syn::TypeParamBound::Trait(bound) = bound else {
-            return false;
+            return None;
         };
-        let Some(segment) = bound.path.segments.last() else {
-            return false;
-        };
+        let segment = bound.path.segments.last()?;
         let names: Vec<_> = bound
             .path
             .segments
             .iter()
             .map(|part| part.ident.to_string())
             .collect();
-        (matches!(names.as_slice(), [name] if name == "FnOnce")
+        if !(matches!(names.as_slice(), [name] if name == "FnOnce")
             || matches!(names.as_slice(), [root, module, name] if (root == "std" || root == "core") && module == "ops" && name == "FnOnce"))
-            && matches!(&segment.arguments, syn::PathArguments::Parenthesized(args) if args.inputs.is_empty())
+        {
+            return None;
+        }
+        let syn::PathArguments::Parenthesized(arguments) = &segment.arguments else {
+            return None;
+        };
+        Some(arguments.inputs.len())
     }
-    let mut names = BTreeSet::new();
+    let mut names = BTreeMap::<String, BTreeSet<usize>>::new();
     for parameter in signature.generics.type_params() {
-        if parameter.bounds.iter().any(is_zero_arg_once) {
-            names.insert(parameter.ident.to_string());
+        for arity in parameter.bounds.iter().filter_map(once_arity) {
+            names
+                .entry(parameter.ident.to_string())
+                .or_default()
+                .insert(arity);
         }
     }
     if let Some(where_clause) = &signature.generics.where_clause {
@@ -83,9 +90,10 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
                     .generics
                     .type_params()
                     .any(|parameter| parameter.ident == *name)
-                && predicate.bounds.iter().any(is_zero_arg_once)
             {
-                names.insert(name.to_string());
+                for arity in predicate.bounds.iter().filter_map(once_arity) {
+                    names.entry(name.to_string()).or_default().insert(arity);
+                }
             }
         }
     }
@@ -102,12 +110,17 @@ pub(super) fn callback_parameters(signature: &Signature) -> Vec<CallbackParamete
                 return None;
             };
             let name = path.path.get_ident()?.to_string();
-            if path.qself.is_some() || !names.contains(&name) || !arg.attrs.is_empty() {
+            if path.qself.is_some() || !arg.attrs.is_empty() {
+                return None;
+            }
+            let arities = names.get(&name)?;
+            if arities.len() != 1 {
                 return None;
             }
             Some(CallbackParameter {
                 argument,
                 name: pattern(&arg.pat)?,
+                arity: *arities.first()?,
             })
         })
         .collect()
@@ -123,8 +136,7 @@ fn async_closures(
             let Expr::Closure(closure) = expr else {
                 return None;
             };
-            if !closure.inputs.is_empty()
-                || !closure.attrs.is_empty()
+            if !closure.attrs.is_empty()
                 || closure.asyncness.is_some()
                 || closure.constness.is_some()
             {
@@ -133,8 +145,26 @@ fn async_closures(
             let Expr::Async(body) = &*closure.body else {
                 return None;
             };
+            let parameters: Vec<_> = closure
+                .inputs
+                .iter()
+                .map(|pattern| match pattern {
+                    Pat::Ident(ident) if ident.subpat.is_none() => Some(ident.ident.to_string()),
+                    Pat::Type(typed) => match &*typed.pat {
+                        Pat::Ident(ident) if ident.subpat.is_none() => {
+                            Some(ident.ident.to_string())
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect::<Option<_>>()?;
+            if parameters.iter().collect::<BTreeSet<_>>().len() != parameters.len() {
+                return None;
+            }
             Some(AsyncClosure {
                 argument,
+                parameters,
                 site: reader.site(closure.span()),
                 body: reader.deferred_block(&body.block),
             })
@@ -312,6 +342,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             await_producer: None,
             directly_awaited: false,
             awaited_value: None,
+            awaited_arity: 0,
             async_closures: async_closures(self.reader, &call.args),
         });
     }
@@ -333,6 +364,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
             await_producer: None,
             directly_awaited: false,
             awaited_value: None,
+            awaited_arity: 0,
             async_closures: async_closures(self.reader, &call.args),
         });
     }
@@ -357,8 +389,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                 {
                     observation.directly_awaited = true;
                 }
-                if call.args.is_empty()
-                    && let Expr::Path(path) = &*call.func
+                if let Expr::Path(path) = &*call.func
                     && path.qself.is_none()
                     && let Some(name) = path.path.get_ident()
                     && self.callback_names.contains(&name.to_string())
@@ -372,6 +403,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                         await_producer: None,
                         directly_awaited: false,
                         awaited_value: Some(name.to_string()),
+                        awaited_arity: call.args.len(),
                         async_closures: vec![],
                     });
                 }
@@ -402,6 +434,7 @@ impl<'ast> Visit<'ast> for Facts<'_, '_> {
                     await_producer: Some(self.reader.site(call.span())),
                     directly_awaited: false,
                     awaited_value: None,
+                    awaited_arity: 0,
                     async_closures: vec![],
                 });
             }
@@ -471,6 +504,7 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                     await_producer: None,
                     directly_awaited: false,
                     awaited_value: None,
+                    awaited_arity: 0,
                     async_closures: vec![],
                 });
             } else if let Some(call) = direct_path_call(&awaited.base)
@@ -493,6 +527,7 @@ impl<'ast> Visit<'ast> for AwaitedSelfCalls<'_, '_, '_> {
                     await_producer: None,
                     directly_awaited: false,
                     awaited_value: None,
+                    awaited_arity: 0,
                     async_closures: vec![],
                 });
             }

@@ -228,8 +228,10 @@ impl<'a> Builder<'a> {
             .calls
             .iter()
             .find(|call| &call.site == site);
-        if let Some(name) = source_call.and_then(|call| call.awaited_value.as_deref())
+        if let Some(call) = source_call
+            && let Some(name) = call.awaited_value.as_deref()
             && let Some(closure) = self.callbacks.get(name).cloned()
+            && closure.parameters.len() == call.awaited_arity
         {
             let poll = self.node(
                 "poll callback's async future [source candidate; only if invoked and polled]",
@@ -292,6 +294,19 @@ impl<'a> Builder<'a> {
             }
             return Some(id.to_owned());
         };
+        if let Some(call) = source_call
+            && index.callback_bound_unshadowed(j)
+            && let Some(node) = self.nodes.iter_mut().find(|node| node.id == id)
+        {
+            for parameter in &index.functions()[j].flow.callback_parameters {
+                for closure in call.async_closures.iter().filter(|closure| {
+                    closure.argument == parameter.argument
+                        && closure.parameters.len() == parameter.arity
+                }) {
+                    write!(node.label, "\n[written callback argument {} matches FnOnce parameter {} with {} arguments; closure at {}; invocation and polling not established]", closure.argument + 1, parameter.name, parameter.arity, closure.site.link()).expect("formatting into a String cannot fail");
+                }
+            }
+        }
         let async_callback_target = index.functions()[j].flow.async_function
             && !index.functions()[j].flow.callback_parameters.is_empty();
         if async_callback_target && !source_call.is_some_and(|call| call.directly_awaited) {
@@ -329,7 +344,10 @@ impl<'a> Builder<'a> {
                     && let [closure] = call
                         .async_closures
                         .iter()
-                        .filter(|closure| closure.argument == parameter.argument)
+                        .filter(|closure| {
+                            closure.argument == parameter.argument
+                                && closure.parameters.len() == parameter.arity
+                        })
                         .collect::<Vec<_>>()
                         .as_slice()
                 {
