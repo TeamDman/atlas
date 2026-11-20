@@ -231,7 +231,7 @@ it. Other `x.await` forms show `x`'s steps, then one await step; polling
 frequency, scheduling and whether a future completes are not shown.
 
 **Expanding calls.** By default `flow` shows one function body. With
-`--depth 1` (up to 6), it also opens the functions that body calls, when it can
+`--depth 1` (up to 24), it also opens the functions that body calls, when it can
 resolve them, and shows where each call returns. Recursion, the depth limit and
 calls it cannot resolve are marked as boundaries. A diagram with more than 600
 steps is refused; choose a smaller function or depth.
@@ -300,6 +300,16 @@ present-value variant. When both identities and a unary forwarding wrapper
 are source-bound, Atlas can use an unshadowed `Some(binding)` arm on a direct
 `self.field` match to identify a unique written enum payload method as a
 candidate, entering its async body only if the wrapped future is polled.
+Atlas can likewise use an unshadowed tuple-variant binding in `match self`
+when the enum, variant payload, and concrete inherent method each have a
+unique supported source declaration. Public aliases exposed through an
+observed glob can be followed across workspace crates; competing, conditional,
+unavailable, and unsupported declarations remain boundaries. A directly
+awaited unary wrapper must have a matching forwarding contract before its
+async payload method can be entered.
+Direct `self.field` calls can also use a uniquely written enum field type and
+inherent method. These are source candidates; macro-generated alternatives
+and runtime branch feasibility are not proved.
 Argument indices exclude the method receiver. Build these observations from independently reviewed source
 or compiler output; a hash binds the supplied assertion to bytes, not to its
 correctness. Call and definition columns must have ASCII prefixes so the

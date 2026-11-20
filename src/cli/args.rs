@@ -113,7 +113,7 @@ pub(super) enum Command {
     Representations(representations::Options),
     /// Show the steps and branches inside one function.
     #[command(
-        after_help = "Answers: what steps, branches, loops and returns does this function's code contain?\n--depth N also opens the functions it calls, up to N levels (max 6). Macros, closures and unsupported syntax are shown as opaque steps.\nThis shows what the code's structure allows; it does not prove a path can run.\nExample: cargo atlas flow --path src/main.rs --function main --depth 1"
+        after_help = "Answers: what steps, branches, loops and returns does this function's code contain?\n--depth N also opens the functions it calls, up to N levels (max 24). Macros, closures and unsupported syntax are shown as opaque steps.\nThis shows what the code's structure allows; it does not prove a path can run.\nExample: cargo atlas flow --path src/main.rs --function main --depth 1"
     )]
     Flow(flow::Options),
     /// Compare selected types and their functions between two commits.

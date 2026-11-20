@@ -33,6 +33,10 @@ pub(super) struct OptionalField {
 }
 #[derive(Clone)]
 pub(super) struct EnumShape {
+    pub scope: Vec<String>,
+    pub imports: BTreeMap<String, Vec<Vec<String>>>,
+    pub variants: BTreeMap<String, Vec<Vec<String>>>,
+    pub ambiguous_variants: BTreeSet<String>,
     pub public: bool,
     pub supported: bool,
 }
@@ -295,7 +299,57 @@ fn collect(
             Item::Enum(item) => {
                 let mut key = scope.to_vec();
                 key.push(item.ident.to_string());
+                let mut variants = BTreeMap::<String, Vec<Vec<String>>>::new();
+                let mut ambiguous_variants = BTreeSet::new();
+                let mut seen_variants = BTreeSet::new();
+                for variant in &item.variants {
+                    let name = variant.ident.to_string();
+                    if !seen_variants.insert(name.clone()) {
+                        ambiguous_variants.insert(name.clone());
+                    }
+                    if conditional(&variant.attrs) {
+                        ambiguous_variants.insert(name);
+                        continue;
+                    }
+                    let syn::Fields::Unnamed(fields) = &variant.fields else {
+                        continue;
+                    };
+                    if fields.unnamed.len() != 1 {
+                        continue;
+                    }
+                    let Some(field) = fields.unnamed.first() else {
+                        continue;
+                    };
+                    if conditional(&field.attrs) {
+                        ambiguous_variants.insert(name);
+                        continue;
+                    }
+                    let syn::Type::Path(payload) = &field.ty else {
+                        continue;
+                    };
+                    if payload.qself.is_some()
+                        || payload
+                            .path
+                            .segments
+                            .iter()
+                            .any(|part| !matches!(part.arguments, syn::PathArguments::None))
+                    {
+                        continue;
+                    }
+                    variants.entry(name).or_default().push(
+                        payload
+                            .path
+                            .segments
+                            .iter()
+                            .map(|part| part.ident.to_string())
+                            .collect(),
+                    );
+                }
                 enums.entry(key).or_default().push(EnumShape {
+                    scope: scope.to_vec(),
+                    imports: imports.clone(),
+                    variants,
+                    ambiguous_variants,
                     public: matches!(item.vis, syn::Visibility::Public(_)),
                     supported: item.generics.params.is_empty()
                         && item.generics.where_clause.is_none()
@@ -599,10 +653,11 @@ impl Index {
                 }
                 for (path, shapes) in &facts.enums {
                     let key = scope.iter().chain(path).cloned().collect();
-                    self.enums
-                        .entry(key)
-                        .or_default()
-                        .extend(shapes.iter().cloned());
+                    let shapes = shapes.iter().cloned().map(|mut shape| {
+                        shape.scope = scope.iter().chain(&shape.scope).cloned().collect();
+                        shape
+                    });
+                    self.enums.entry(key).or_default().extend(shapes);
                 }
                 self.inherent_sites.extend(facts.inherent.iter().cloned());
                 self.generic_inherent_sites

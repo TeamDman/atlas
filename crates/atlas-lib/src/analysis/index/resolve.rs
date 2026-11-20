@@ -745,7 +745,16 @@ impl Index {
                         && let Some(field_owner) =
                             self.in_scope(&shape.scope, &shape.imports, field_type)
                     {
-                        return self.written_struct_method(function, &field_owner, call, receiver);
+                        return match (self.struct_path(&field_owner), self.enum_path(&field_owner))
+                        {
+                            (Some(owner), None) => {
+                                self.written_struct_method(function, &owner, call, receiver)
+                            }
+                            (None, Some(owner)) => self.written_enum_method(&owner, call, receiver),
+                            _ => Target::Summarized(format!(
+                                "receiver {receiver}: field owner is ambiguous or unsupported"
+                            )),
+                        };
                     }
                 }
                 syn::Expr::MethodCall(_) => {
@@ -1160,9 +1169,8 @@ impl Index {
         let (name, parent) = path.split_last()?;
         let mut star = parent.to_vec();
         star.push("*".into());
-        let globs = self.exports.get(&star)?;
         let mut found = BTreeSet::new();
-        for module in globs {
+        for module in self.exports.get(&star).into_iter().flatten() {
             let module = self.exported(module)?;
             if !self.scopes.values().flatten().any(|scope| scope == &module) {
                 return None;
@@ -1183,6 +1191,39 @@ impl Index {
         } else {
             None
         }
+    }
+
+    /// Follow an explicitly public alias exposed by an observed glob module.
+    /// Missing source modules or competing aliases remain unresolved.
+    fn glob_alias_targets(&self, path: &[String]) -> Option<BTreeSet<Vec<String>>> {
+        let mut targets = BTreeSet::new();
+        for position in 1..path.len() {
+            let direct = &path[..=position];
+            if self.scopes.values().flatten().any(|scope| scope == direct)
+                || self.exports.contains_key(direct)
+                || self.structs.contains_key(direct)
+                || self.enums.contains_key(direct)
+            {
+                continue;
+            }
+            let mut star = path[..position].to_vec();
+            star.push("*".into());
+            for module in self.exports.get(&star).into_iter().flatten() {
+                let module = self.exported(module)?;
+                if !self.scopes.values().flatten().any(|scope| scope == &module) {
+                    return None;
+                }
+                let mut alias = module;
+                alias.push(path[position].clone());
+                if !self.exports.contains_key(&alias) {
+                    continue;
+                }
+                let mut target = self.exported(&alias)?;
+                target.extend_from_slice(&path[position + 1..]);
+                targets.insert(self.exported(&target)?);
+            }
+        }
+        Some(targets)
     }
 
     /// Prefer the written type; otherwise inspect a unique initializer's return type.
@@ -1404,6 +1445,118 @@ impl Index {
         ))
     }
 
+    /// Match a `match self` tuple variant to its uniquely written payload type.
+    pub(crate) fn enum_match_method(&self, caller: usize, call: &Call) -> Option<Target> {
+        let function = self.functions.get(caller)?;
+        let receiver = call.receiver.as_deref()?;
+        let bindings: Vec<_> = function
+            .flow
+            .enum_match_bindings
+            .iter()
+            .filter(|binding| binding.binding == receiver && binding.arm.contains(&call.site))
+            .collect();
+        let [binding] = bindings.as_slice() else {
+            return None;
+        };
+        let same_arm: Vec<_> = function
+            .flow
+            .bindings
+            .iter()
+            .filter(|item| item.name == receiver && binding.arm.contains(&item.site))
+            .collect();
+        if !matches!(same_arm.as_slice(), [item] if item.site == binding.binding_site) {
+            return None;
+        }
+        let owner = self.enum_path(&self.canonical(caller, &["Self".into()])?)?;
+        let pattern_owner = self.enum_path(&self.canonical(caller, &binding.owner)?)?;
+        if owner != pattern_owner {
+            return None;
+        }
+        let [shape] = self.enums.get(&owner)?.as_slice() else {
+            return None;
+        };
+        if shape.ambiguous_variants.contains(&binding.variant) {
+            return None;
+        }
+        let [payload] = shape.variants.get(&binding.variant)?.as_slice() else {
+            return None;
+        };
+        let payload = self.in_scope(&shape.scope, &shape.imports, payload)?;
+        let mut owners = BTreeSet::new();
+        if let Some(owner) = self.struct_path(&payload) {
+            owners.insert((false, owner));
+        }
+        if let Some(owner) = self.enum_path(&payload) {
+            owners.insert((true, owner));
+        }
+        for candidate in self.glob_alias_targets(&payload)? {
+            match (self.struct_path(&candidate), self.enum_path(&candidate)) {
+                (Some(owner), None) => {
+                    let [shape] = self.structs.get(&owner)?.as_slice() else {
+                        return None;
+                    };
+                    if !shape.public {
+                        return None;
+                    }
+                    owners.insert((false, owner));
+                }
+                (None, Some(owner)) => {
+                    let [shape] = self.enums.get(&owner)?.as_slice() else {
+                        return None;
+                    };
+                    if !shape.public {
+                        return None;
+                    }
+                    owners.insert((true, owner));
+                }
+                _ => return None,
+            }
+        }
+        let owners: Vec<_> = owners.into_iter().collect();
+        let [(is_enum, owner)] = owners.as_slice() else {
+            return None;
+        };
+        if !*is_enum {
+            Some(
+                match self.written_struct_method(caller, owner, call, receiver) {
+                    Target::Function(index) => Target::Candidate(
+                        index,
+                        format!(
+                            "{receiver} is the written {} variant payload with candidate owner {}; source candidate, not compiler proof",
+                            binding.variant,
+                            owner.join("::")
+                        ),
+                    ),
+                    other => other,
+                },
+            )
+        } else {
+            Some(self.written_enum_method(owner, call, receiver))
+        }
+    }
+
+    fn written_enum_method(&self, owner: &[String], call: &Call, receiver: &str) -> Target {
+        let mut method = owner.to_vec();
+        method.push(call.spelling.clone());
+        match self.classify(&method) {
+            Target::Function(index)
+                if self.functions[index].inherent
+                    && self.canonical(index, &["Self".into()]).as_deref() == Some(owner) =>
+            {
+                Target::Candidate(
+                    index,
+                    format!(
+                        "receiver {receiver} has uniquely written enum owner {}; source candidate, not compiler proof",
+                        owner.join("::")
+                    ),
+                )
+            }
+            _ => Target::Summarized(format!(
+                "receiver {receiver}: enum method is ambiguous or unsupported"
+            )),
+        }
+    }
+
     fn enum_path(&self, path: &[String]) -> Option<Vec<String>> {
         if let Some(shapes) = self.enums.get(path) {
             let [shape] = shapes.as_slice() else {
@@ -1415,7 +1568,7 @@ impl Index {
         let mut star = parent.to_vec();
         star.push("*".into());
         let mut found = BTreeSet::new();
-        for module in self.exports.get(&star)? {
+        for module in self.exports.get(&star).into_iter().flatten() {
             let mut candidate = self.exported(module)?;
             if !self
                 .scopes

@@ -5,6 +5,237 @@ use std::collections::BTreeSet;
 use support::Fixture;
 
 #[test]
+fn enum_payload_follows_a_unique_public_globbed_crate_alias() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let app = "pub mod surface;mod carrier;use crate::surface::alias::Arg;enum Cmd{Run(Arg)}impl Cmd{async fn invoke(self){match self{Cmd::Run(args)=>Box::pin(args.invoke()).await}}}struct Shell{command:Cmd}impl Shell{async fn run(self){self.command.invoke().await}}pub async fn entry(){Shell{command:Cmd::Run(domain::Arg)}.run().await;}";
+    let fixture = Fixture::new(&[
+        (
+            "Cargo.toml",
+            "[workspace]\nmembers=['app','domain']\nresolver='3'\n",
+        ),
+        (
+            "app/Cargo.toml",
+            "[package]\nname='app'\nversion='0.1.0'\nedition='2024'\n[dependencies]\ndomain={path='../domain'}\n",
+        ),
+        (
+            "domain/Cargo.toml",
+            "[package]\nname='domain'\nversion='0.1.0'\nedition='2024'\n",
+        ),
+        ("app/src/lib.rs", app),
+        ("app/src/surface.rs", "pub use crate::carrier::*;"),
+        ("app/src/carrier.rs", "pub use domain as alias;"),
+        ("app/src/carrier2.rs", "pub use crate::alternate as alias;"),
+        (
+            "app/src/alternate.rs",
+            "pub struct Arg;impl Arg{pub async fn invoke(self){}}",
+        ),
+        (
+            "domain/src/lib.rs",
+            "pub struct Arg;impl Arg{pub async fn invoke(self){}}",
+        ),
+    ]);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--workspace", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let generate = |text: &str| {
+        fixture.write("app/src/lib.rs", text);
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+        let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+        let profile = FutureProfile {
+            schema: 1,
+            scope: vec![],
+            routes: vec![],
+            sources: vec![],
+            resolutions: vec![Resolution {
+                path: "app/src/lib.rs".into(),
+                line: 1,
+                column: text.find("pin(").unwrap(),
+                spelling: "pin".into(),
+                definition: "fixture::pin".into(),
+            }],
+            contracts: vec![Contract {
+                definition: "fixture::pin".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "declared forwarding wrapper".into(),
+            }],
+        };
+        analysis
+            .expanded_with_future_profile(
+                "app/src/lib.rs",
+                "entry",
+                3,
+                workflow::Detail::Expressions,
+                &profile,
+            )
+            .unwrap()
+            .1
+    };
+    let diagram = generate(app);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Arg::invoke"),
+        "{:?}",
+        diagram
+            .nodes
+            .iter()
+            .filter(|node| node.label.contains("invoke"))
+            .map(|node| &node.label)
+            .collect::<Vec<_>>()
+    );
+    fixture.write(
+        "app/src/surface.rs",
+        "pub use crate::carrier::*;pub use crate::carrier2::*;",
+    );
+    let ambiguous = app.replace(
+        "mod carrier;",
+        "mod carrier;mod carrier2;pub mod alternate;",
+    );
+    let diagram = generate(&ambiguous);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Arg::invoke")
+    );
+}
+
+#[test]
+fn enum_variant_payloads_and_enum_fields_select_written_methods() {
+    use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
+    let source = "struct A;struct B;impl A{async fn invoke(self){}}impl B{async fn invoke(self){}}enum Cmd{A(A),B(B)}impl Cmd{async fn invoke(self){match self{Cmd::A(args)=>Box::pin(args.invoke()).await,Cmd::B(args)=>Box::pin(args.invoke()).await}}}struct Shell{command:Cmd}impl Shell{async fn run(self){self.command.invoke().await}}pub async fn entry(){Shell{command:Cmd::A(A)}.run().await;}";
+    let make = |text: &str, allow_pin: bool| {
+        let fixture = Fixture::new(&[("src/lib.rs", text)]);
+        let metadata = cargo_metadata::MetadataCommand::new()
+            .current_dir(fixture.path())
+            .no_deps()
+            .exec()
+            .unwrap();
+        let snapshot = discovery::snapshot_metadata(&metadata).unwrap();
+        let analysis = cargo_atlas::analysis::Analysis::new(&snapshot).unwrap();
+        let resolutions = text
+            .match_indices("pin(")
+            .map(|(column, _)| Resolution {
+                path: "src/lib.rs".into(),
+                line: 1,
+                column,
+                spelling: "pin".into(),
+                definition: "fixture::pin".into(),
+            })
+            .collect();
+        let contracts = if allow_pin {
+            vec![Contract {
+                definition: "fixture::pin".into(),
+                operation: Operation::ArgumentForward { argument: 0 },
+                evidence: "declared forwarding wrapper".into(),
+            }]
+        } else {
+            vec![]
+        };
+        let profile = FutureProfile {
+            schema: 1,
+            scope: vec![],
+            routes: vec![],
+            sources: vec![],
+            resolutions,
+            contracts,
+        };
+        (
+            analysis
+                .expanded_with_future_profile(
+                    "src/lib.rs",
+                    "entry",
+                    3,
+                    workflow::Detail::Expressions,
+                    &profile,
+                )
+                .unwrap()
+                .1,
+            fixture,
+        )
+    };
+    let (diagram, fixture) = make(source, true);
+    let compiled = std::process::Command::new(env!("CARGO"))
+        .current_dir(fixture.path())
+        .args(["check", "--offline", "--target-dir"])
+        .arg(fixture.path().join("target"))
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn Cmd::invoke")
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn A::invoke")
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn B::invoke")
+    );
+    let (diagram, _fixture) = make(source, false);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn A::invoke" || node.label == "fn B::invoke")
+    );
+    let shadowed = source.replace(
+        "Cmd::A(args)=>Box::pin(args.invoke()).await",
+        "Cmd::A(args)=>{let args=B;Box::pin(args.invoke()).await}",
+    );
+    let (diagram, _fixture) = make(&shadowed, true);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn A::invoke")
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn B::invoke")
+    );
+    let conditional = source.replace(
+        "enum Cmd{A(A),",
+        "enum Cmd{#[cfg(feature=\"alternate\")] A(A),A(B),",
+    );
+    let (diagram, _fixture) = make(&conditional, true);
+    assert!(
+        !diagram
+            .nodes
+            .iter()
+            .any(|node| node.label == "fn A::invoke")
+    );
+}
+
+#[test]
 fn profiled_optional_match_and_awaited_wrapper_select_concrete_enum() {
     use cargo_atlas::workflow::future_profile::{Contract, FutureProfile, Operation, Resolution};
     let source = "enum Command{Run}enum Other{Run}impl Command{async fn invoke(self){}}impl Other{async fn invoke(self){}}struct Cli{command:Option<Command>}impl Cli{async fn invoke(self){match self.command{Some(cmd)=>Box::pin(cmd.invoke()).await,None=>()}}}pub async fn entry(){Cli{command:Some(Command::Run)}.invoke().await;}";

@@ -271,6 +271,7 @@ impl Reader<'_> {
             deferred_locals: self.deferred_locals(function.body, function.signature),
             local_values: self.local_values(function.body),
             optional_match_bindings: self.optional_match_bindings(function.body),
+            enum_match_bindings: self.enum_match_bindings(function.body),
             wrapped_awaits: self.wrapped_awaits(function.body),
             site: self.site(function.signature.span()),
             steps: self.block(function.body),

@@ -21,7 +21,7 @@ use std::{
 pub(super) struct Options {
     /// Compatibility positional project root; prefer --root.
     pub(super) root: Option<PathBuf>,
-    /// Expand matched source calls; recursion/unknown bodies remain explicit (max 6).
+    /// Expand matched source calls; recursion/unknown bodies remain explicit (max 24).
     #[arg(long,default_value_t=0,value_parser=clap::value_parser!(u8).range(0..=i64::from(workflow::MAX_DEPTH)),requires="path")]
     depth: u8,
     /// Fold borrow operands and generated ? bridges; raw steps remain in evidence.

@@ -91,6 +91,76 @@ pub(super) struct Reader<'a> {
     unindexed_calls: bool,
 }
 impl Reader<'_> {
+    pub(super) fn enum_match_bindings(&self, block: &syn::Block) -> Vec<super::EnumMatchBinding> {
+        struct Collector<'a, 'b> {
+            reader: &'a Reader<'b>,
+            bindings: Vec<super::EnumMatchBinding>,
+        }
+        impl<'ast> Visit<'ast> for Collector<'_, '_> {
+            fn visit_expr_match(&mut self, expr: &'ast syn::ExprMatch) {
+                if expr.attrs.is_empty()
+                    && matches!(&*expr.expr, Expr::Path(path) if path.qself.is_none() && path.path.is_ident("self"))
+                {
+                    for arm in &expr.arms {
+                        if !arm.attrs.is_empty() {
+                            continue;
+                        }
+                        let syn::Pat::TupleStruct(pattern) = &arm.pat else {
+                            continue;
+                        };
+                        if !pattern.attrs.is_empty()
+                            || pattern.qself.is_some()
+                            || pattern.path.segments.len() < 2
+                            || pattern
+                                .path
+                                .segments
+                                .iter()
+                                .any(|part| !matches!(part.arguments, syn::PathArguments::None))
+                        {
+                            continue;
+                        }
+                        let [syn::Pat::Ident(binding)] =
+                            pattern.elems.iter().collect::<Vec<_>>().as_slice()
+                        else {
+                            continue;
+                        };
+                        if !binding.attrs.is_empty()
+                            || binding.by_ref.is_some()
+                            || binding.mutability.is_some()
+                            || binding.subpat.is_some()
+                        {
+                            continue;
+                        }
+                        let mut owner: Vec<_> = pattern
+                            .path
+                            .segments
+                            .iter()
+                            .map(|part| part.ident.to_string())
+                            .collect();
+                        let Some(variant) = owner.pop() else { continue };
+                        self.bindings.push(super::EnumMatchBinding {
+                            binding: binding.ident.to_string(),
+                            binding_site: self.reader.site(binding.span()),
+                            owner,
+                            variant,
+                            arm: self.reader.site(arm.span()),
+                        });
+                    }
+                }
+                syn::visit::visit_expr_match(self, expr);
+            }
+            fn visit_expr_async(&mut self, _: &'ast syn::ExprAsync) {}
+            fn visit_expr_closure(&mut self, _: &'ast syn::ExprClosure) {}
+            fn visit_expr_macro(&mut self, _: &'ast syn::ExprMacro) {}
+            fn visit_item(&mut self, _: &'ast syn::Item) {}
+        }
+        let mut collector = Collector {
+            reader: self,
+            bindings: Vec::new(),
+        };
+        collector.visit_block(block);
+        collector.bindings
+    }
     pub(super) fn optional_match_bindings(
         &self,
         block: &syn::Block,

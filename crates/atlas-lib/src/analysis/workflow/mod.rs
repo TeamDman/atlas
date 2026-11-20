@@ -287,6 +287,16 @@ pub struct OptionalMatchBinding {
     pub pattern: Site,
     pub arm: Site,
 }
+/// A simple tuple-variant binding in a written `match self` arm.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct EnumMatchBinding {
+    pub binding: String,
+    pub binding_site: Site,
+    pub owner: Vec<String>,
+    pub variant: String,
+    pub arm: Site,
+}
 /// A directly awaited one-argument wrapper around a method call.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
@@ -343,6 +353,8 @@ pub struct Workflow {
     pub local_values: Vec<LocalValue>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub optional_match_bindings: Vec<OptionalMatchBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enum_match_bindings: Vec<EnumMatchBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub wrapped_awaits: Vec<WrappedAwait>,
     pub site: Site,
@@ -595,7 +607,7 @@ pub fn expand_with_future_profile(
 }
 
 /// Maximum supported source-call expansion depth; larger requests must narrow their question.
-pub const MAX_DEPTH: u8 = 6;
+pub const MAX_DEPTH: u8 = 24;
 pub(crate) fn check_depth(depth: u8) -> Result<()> {
     if depth > MAX_DEPTH {
         return Err(format!("flow depth must be at most {MAX_DEPTH}").into());

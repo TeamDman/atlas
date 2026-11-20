@@ -349,6 +349,7 @@ impl<'a> Builder<'a> {
                 }
                 index
                     .optional_match_method(f, &value.call, profile)
+                    .or_else(|| index.enum_match_method(f, &value.call))
                     .map(|target| (value.call.clone(), target))
             })
         } else {
