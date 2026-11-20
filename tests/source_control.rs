@@ -1119,3 +1119,113 @@ fn an_expanded_callee_notes_its_local_declarations() {
             .any(|n| n.label.contains("[opaque]") && n.label.contains("inner"))
     );
 }
+
+#[test]
+fn returned_boxed_future_retains_an_explicit_poll_boundary() {
+    let source = include_str!("fixtures/returned_future_flow.rs");
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 4);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn RequestExecution<T>::run"))
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll returned future [opaque"))
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn page"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("async move") && node.label.contains("opaque"))
+    );
+}
+
+#[test]
+fn guarded_instrumented_future_callbacks_remain_opaque_without_poll_proof() {
+    let source = include_str!("fixtures/guarded_future_flow.rs");
+    let (_, diagram) = inspect(&[("src/lib.rs", source)], "entry", 5);
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("fn RequestExecution<T>::run"))
+    );
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("poll returned future [opaque"))
+    );
+    assert!(!diagram.nodes.iter().any(|node| node.label == "fn page"));
+    assert!(
+        diagram
+            .nodes
+            .iter()
+            .any(|node| node.label.contains("move || async move") && node.label.contains("opaque"))
+    );
+}
+
+#[test]
+fn guarded_fixture_distinguishes_callback_invocation_from_future_polling() {
+    use std::{
+        cell::Cell,
+        future::Future,
+        rc::Rc,
+        task::{Context, Waker},
+    };
+    async fn guarded<F, Fut>(admitted: bool, cancelled: bool, factory: F)
+    where
+        F: FnOnce() -> Fut,
+        Fut: Future<Output = ()>,
+    {
+        if !admitted {
+            return;
+        }
+        let future = factory();
+        if cancelled {
+            return;
+        }
+        future.await;
+    }
+    let invoked = Rc::new(Cell::new(0));
+    let polled = Rc::new(Cell::new(0));
+    let make_factory = || {
+        let invoked = Rc::clone(&invoked);
+        let polled = Rc::clone(&polled);
+        move || {
+            invoked.set(invoked.get() + 1);
+            async move {
+                polled.set(polled.get() + 1);
+            }
+        }
+    };
+    drop(guarded(true, false, make_factory()));
+    assert_eq!((invoked.get(), polled.get()), (0, 0));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(
+        Box::pin(guarded(false, false, make_factory()))
+            .as_mut()
+            .poll(&mut context)
+            .is_ready()
+    );
+    assert_eq!((invoked.get(), polled.get()), (0, 0));
+    assert!(
+        Box::pin(guarded(true, true, make_factory()))
+            .as_mut()
+            .poll(&mut context)
+            .is_ready()
+    );
+    assert_eq!((invoked.get(), polled.get()), (1, 0));
+    assert!(
+        Box::pin(guarded(true, false, make_factory()))
+            .as_mut()
+            .poll(&mut context)
+            .is_ready()
+    );
+    assert_eq!((invoked.get(), polled.get()), (2, 1));
+}
